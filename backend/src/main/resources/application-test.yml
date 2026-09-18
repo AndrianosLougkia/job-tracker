@@ -1,0 +1,10 @@
+# Applied automatically when the "test" profile is active.
+# Testcontainers supplies the real datasource URL at runtime via @DynamicPropertySource.
+spring:
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    com.jobtracker: DEBUG
+    org.flywaydb: DEBUG

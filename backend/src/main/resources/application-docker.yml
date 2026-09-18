@@ -1,0 +1,5 @@
+# Applied when SPRING_PROFILES_ACTIVE=docker (set in Docker Compose).
+# Overrides localhost references with Docker Compose service names.
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/jobtracker
