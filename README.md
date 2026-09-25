@@ -150,7 +150,7 @@ No manual database setup is required for tests.
 |---|---|---|
 | 0 | Architecture Contract | Done |
 | 1 | Project Skeleton and Infrastructure | Done |
-| 2 | Database, Flyway, Domain, CRUD | Pending |
+| 2 | Database, Flyway, Domain, CRUD | Done |
 | 3 | Authentication and Authorization | Pending |
 | 4 | React Job Tracker Interface | Pending |
 | 5 | MinIO, Resume Upload, PDF Extraction | Pending |
@@ -162,8 +162,8 @@ No manual database setup is required for tests.
 
 ---
 
-## Known Limitations (Stage 1)
+## Known Limitations (Stage 2)
 
 - No authentication — all endpoints are open. Added in Stage 3.
-- No business logic — only the health endpoint exists. Added in Stage 2.
+- `X-Dev-User-Id` header is used as a temporary user identity mechanism. Replaced by JWT in Stage 3.
 - Security config is permissive by design for development. Replaced in Stage 3.
