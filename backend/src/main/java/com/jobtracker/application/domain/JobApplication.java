@@ -5,13 +5,23 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 /**
  * A single job application belonging to a user.
  * user_id is the ownership key — every query must filter by it.
  */
+
+
 @Entity
+
 @Table(name = "job_applications")
 public class JobApplication {
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "application_status")
+    private ApplicationStatus status = ApplicationStatus.WISHLIST;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,10 +36,6 @@ public class JobApplication {
 
     @Column(nullable = false, length = 255)
     private String role;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, columnDefinition = "application_status")
-    private ApplicationStatus status = ApplicationStatus.WISHLIST;
 
     @Column(name = "job_description", columnDefinition = "TEXT")
     private String jobDescription;
