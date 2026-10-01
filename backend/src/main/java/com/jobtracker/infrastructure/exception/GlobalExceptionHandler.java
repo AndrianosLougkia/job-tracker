@@ -65,7 +65,7 @@ public class GlobalExceptionHandler {
             .body(errorBody(500, "Internal Server Error", "An unexpected error occurred", request.getRequestURI()));
     }
 
-    static Map<String, Object> errorBody(int status, String error, String message, String path) {
+    public static Map<String, Object> errorBody(int status, String error, String message, String path) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", Instant.now().toString());
         body.put("status", status);
