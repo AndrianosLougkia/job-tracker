@@ -3,7 +3,6 @@
 An AI-powered job application tracker built as a portfolio project.
 Track applications, upload resumes, and receive AI-driven resume-versus-job-description analysis.
 
-> **Build status:** Stage 1 complete — project skeleton, infrastructure, health endpoint.
 
 ---
 
