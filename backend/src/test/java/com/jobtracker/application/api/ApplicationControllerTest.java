@@ -2,7 +2,9 @@ package com.jobtracker.application.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jobtracker.AbstractIntegrationTest;
+import com.jobtracker.TestJwtHelper;
 import com.jobtracker.application.domain.ApplicationRepository;
+import com.jobtracker.application.domain.ApplicationStatus;
 import com.jobtracker.user.domain.User;
 import com.jobtracker.user.domain.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,8 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
-
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -24,15 +26,19 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
     @Autowired ObjectMapper objectMapper;
     @Autowired ApplicationRepository applicationRepository;
     @Autowired UserRepository userRepository;
+    @Autowired PasswordEncoder passwordEncoder;
+    @Autowired TestJwtHelper jwtHelper;
 
-    private Long userId;
+    private User user;
+    private String authHeader;
 
     @BeforeEach
     void setUp() {
         applicationRepository.deleteAll();
         userRepository.deleteAll();
-        User user = userRepository.save(new User("test@example.com", "hash"));
-        userId = user.getId();
+        user = userRepository.save(new User("test@example.com",
+            passwordEncoder.encode("password")));
+        authHeader = jwtHelper.authHeader(user);
     }
 
     @Test
@@ -43,7 +49,7 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.company").value("Acme Corp"))
@@ -53,12 +59,24 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void createApplicationValidatesRequiredFields() throws Exception {
-        CreateApplicationRequest req = new CreateApplicationRequest(); // blank company and role
+    void createApplicationReturns401WithNoToken() throws Exception {
+        CreateApplicationRequest req = new CreateApplicationRequest();
+        req.setCompany("Acme");
+        req.setRole("Dev");
 
         mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void createApplicationValidatesRequiredFields() throws Exception {
+        CreateApplicationRequest req = new CreateApplicationRequest();
+
+        mockMvc.perform(post("/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errors", hasSize(greaterThanOrEqualTo(2))));
@@ -66,28 +84,30 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
 
     @Test
     void listApplicationsReturnsOnlyUsersOwnApplications() throws Exception {
-        // Create an application for userId
+        // Create application for primary user
         CreateApplicationRequest req = new CreateApplicationRequest();
         req.setCompany("My Corp");
         req.setRole("Dev");
         mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isCreated());
 
-        // Create another user and application
-        User other = userRepository.save(new User("other@example.com", "hash"));
+        // Create another user and their application
+        User other = userRepository.save(new User("other@example.com",
+            passwordEncoder.encode("password")));
+        String otherHeader = jwtHelper.authHeader(other);
         req.setCompany("Other Corp");
         mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", other.getId())
+                .header("Authorization", otherHeader)
                 .content(objectMapper.writeValueAsString(req)))
             .andExpect(status().isCreated());
 
-        // List for userId — should only see their own
+        // List for primary user — must see only their own
         mockMvc.perform(get("/applications")
-                .header("X-Dev-User-Id", userId))
+                .header("Authorization", authHeader))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(1)))
             .andExpect(jsonPath("$[0].company").value("My Corp"));
@@ -95,23 +115,23 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
 
     @Test
     void getApplicationReturns404ForWrongUser() throws Exception {
-        // Create application under userId
         CreateApplicationRequest req = new CreateApplicationRequest();
         req.setCompany("Secret Corp");
         req.setRole("Dev");
 
         String json = mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(req)))
             .andReturn().getResponse().getContentAsString();
 
         Long appId = objectMapper.readTree(json).get("id").asLong();
 
-        // Another user tries to access it
-        User other = userRepository.save(new User("intruder@example.com", "hash"));
+        User intruder = userRepository.save(new User("intruder@example.com",
+            passwordEncoder.encode("password")));
+
         mockMvc.perform(get("/applications/" + appId)
-                .header("X-Dev-User-Id", other.getId()))
+                .header("Authorization", jwtHelper.authHeader(intruder)))
             .andExpect(status().isNotFound());
     }
 
@@ -123,22 +143,22 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
 
         String json = mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(create)))
             .andReturn().getResponse().getContentAsString();
 
         Long appId = objectMapper.readTree(json).get("id").asLong();
 
         UpdateApplicationRequest update = new UpdateApplicationRequest();
-        update.setStatus(com.jobtracker.application.domain.ApplicationStatus.APPLIED);
+        update.setStatus(ApplicationStatus.APPLIED);
 
         mockMvc.perform(patch("/applications/" + appId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(update)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("APPLIED"))
-            .andExpect(jsonPath("$.company").value("Acme")); // unchanged
+            .andExpect(jsonPath("$.company").value("Acme"));
     }
 
     @Test
@@ -149,19 +169,18 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
 
         String json = mockMvc.perform(post("/applications")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Dev-User-Id", userId)
+                .header("Authorization", authHeader)
                 .content(objectMapper.writeValueAsString(create)))
             .andReturn().getResponse().getContentAsString();
 
         Long appId = objectMapper.readTree(json).get("id").asLong();
 
         mockMvc.perform(delete("/applications/" + appId)
-                .header("X-Dev-User-Id", userId))
+                .header("Authorization", authHeader))
             .andExpect(status().isNoContent());
 
-        // Confirm gone
         mockMvc.perform(get("/applications/" + appId)
-                .header("X-Dev-User-Id", userId))
+                .header("Authorization", authHeader))
             .andExpect(status().isNotFound());
     }
 }

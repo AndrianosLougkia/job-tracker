@@ -151,7 +151,7 @@ No manual database setup is required for tests.
 | 0 | Architecture Contract | Done |
 | 1 | Project Skeleton and Infrastructure | Done |
 | 2 | Database, Flyway, Domain, CRUD | Done |
-| 3 | Authentication and Authorization | Pending |
+| 3 | Authentication and Authorization | Done |
 | 4 | React Job Tracker Interface | Pending |
 | 5 | MinIO, Resume Upload, PDF Extraction | Pending |
 | 6 | AI Abstraction and Mock Provider | Pending |
@@ -162,8 +162,8 @@ No manual database setup is required for tests.
 
 ---
 
-## Known Limitations (Stage 2)
+## Known Limitations (Stage 3)
 
-- No authentication — all endpoints are open. Added in Stage 3.
-- `X-Dev-User-Id` header is used as a temporary user identity mechanism. Replaced by JWT in Stage 3.
-- Security config is permissive by design for development. Replaced in Stage 3.
+- No frontend login/register UI yet — added in Stage 4.
+- JWT refresh tokens not implemented — re-login required after expiry (24h default).
+- Token stored in localStorage on the client (XSS risk, acceptable for portfolio).

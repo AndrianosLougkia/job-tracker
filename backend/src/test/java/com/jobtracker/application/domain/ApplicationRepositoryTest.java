@@ -14,9 +14,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace;
-
 
 import java.util.List;
 import java.util.Optional;
@@ -29,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * with a real Testcontainers PostgreSQL instance so Flyway and the ENUM type work.
  */
 @DataJpaTest
-@AutoConfigureTestDatabase(replace = Replace.NONE)
 @Testcontainers
 @ActiveProfiles("test")
 class ApplicationRepositoryTest {

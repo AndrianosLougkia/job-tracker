@@ -1,16 +1,21 @@
 package com.jobtracker.user.domain;
 
 import jakarta.persistence.*;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * Persistent user account.
- * Password is stored as a BCrypt hash — never in plaintext.
- * Stage 3 will add Spring Security's UserDetails implementation here.
+ * Implements UserDetails so Spring Security can use it directly in the filter chain.
+ * Password is always stored as a BCrypt hash — never plaintext.
  */
 @Entity
 @Table(name = "users")
-public class User {
+public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,16 +51,37 @@ public class User {
         updatedAt = Instant.now();
     }
 
-    // Getters
+    // ------------------------------------------------------------------ //
+    //  UserDetails implementation                                         //
+    // ------------------------------------------------------------------ //
 
-    public Long getId() { return id; }
-    public String getEmail() { return email; }
+    /** Spring Security uses email as the username. */
+    @Override
+    public String getUsername() { return email; }
+
+    /** Returns the BCrypt hash — Spring Security compares via PasswordEncoder. */
+    @Override
+    public String getPassword() { return passwordHash; }
+
+    /** No role-based access control in MVP — single role for all users. */
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() { return List.of(); }
+
+    @Override public boolean isAccountNonExpired()  { return true; }
+    @Override public boolean isAccountNonLocked()   { return true; }
+    @Override public boolean isCredentialsNonExpired() { return true; }
+    @Override public boolean isEnabled()            { return true; }
+
+    // ------------------------------------------------------------------ //
+    //  Domain getters                                                     //
+    // ------------------------------------------------------------------ //
+
+    public Long getId()             { return id; }
+    public String getEmail()        { return email; }
     public String getPasswordHash() { return passwordHash; }
-    public Instant getCreatedAt() { return createdAt; }
-    public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getCreatedAt()   { return createdAt; }
+    public Instant getUpdatedAt()   { return updatedAt; }
 
-    // Setters (only what the service layer needs)
-
-    public void setEmail(String email) { this.email = email; }
-    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+    public void setEmail(String email)                   { this.email = email; }
+    public void setPasswordHash(String passwordHash)     { this.passwordHash = passwordHash; }
 }

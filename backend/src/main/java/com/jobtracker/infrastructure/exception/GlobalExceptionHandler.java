@@ -1,5 +1,6 @@
 package com.jobtracker.infrastructure.exception;
 
+import com.jobtracker.auth.domain.InvalidCredentialsException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,10 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Translates exceptions into structured JSON error responses.
- * Extended in each stage as new exception types are introduced.
- */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -37,6 +34,14 @@ public class GlobalExceptionHandler {
         log.warn("Conflict: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
             .body(errorBody(409, "Conflict", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidCredentials(
+            InvalidCredentialsException ex, HttpServletRequest request) {
+        log.warn("Login failed: {}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+            .body(errorBody(401, "Unauthorized", ex.getMessage(), request.getRequestURI()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -60,7 +65,7 @@ public class GlobalExceptionHandler {
             .body(errorBody(500, "Internal Server Error", "An unexpected error occurred", request.getRequestURI()));
     }
 
-    public static Map<String, Object> errorBody(int status, String error, String message, String path) {
+    static Map<String, Object> errorBody(int status, String error, String message, String path) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", Instant.now().toString());
         body.put("status", status);
