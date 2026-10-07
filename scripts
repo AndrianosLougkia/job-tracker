@@ -1,3 +1,17 @@
-	modified:   backend/pom.xml
-	modified:   backend/src/main/java/com/jobtracker/infrastructure/exception/GlobalExceptionHandler.java
+# Copy new files from zip into your repo, then:
+git add .
+git commit -m "feat: Stage 2 — domain model, Flyway V2, application CRUD API"
+git push origin main
 
+# Smoke test locally (needs Postgres running):
+docker compose up postgres -d
+cd backend && mvn spring-boot:run
+
+# Create an application
+curl -X POST http://localhost:8080/api/applications \
+  -H "Content-Type: application/json" \
+  -H "X-Dev-User-Id: 1" \
+  -d '{"company":"Acme","role":"Backend Engineer"}'
+
+# Run tests (Docker required for Testcontainers)
+mvn test
