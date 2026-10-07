@@ -5,6 +5,10 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+
 @Entity
 @Table(name = "job_applications")
 public class JobApplication {
@@ -19,6 +23,7 @@ public class JobApplication {
     @Column(nullable = false, length = 255) private String role;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "application_status")
     private ApplicationStatus status = ApplicationStatus.WISHLIST;
 
