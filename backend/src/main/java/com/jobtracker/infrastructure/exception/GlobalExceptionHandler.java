@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,8 +48,7 @@ public class GlobalExceptionHandler {
             MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<String> errors = ex.getBindingResult().getFieldErrors().stream()
             .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-            .sorted()
-            .toList();
+            .sorted().toList();
         log.warn("Validation failed on {} {}: {}", request.getMethod(), request.getRequestURI(), errors);
         Map<String, Object> body = errorBody(400, "Bad Request", "Validation failed", request.getRequestURI());
         body.put("errors", errors);
@@ -62,9 +60,11 @@ public class GlobalExceptionHandler {
             Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception on {} {}", request.getMethod(), request.getRequestURI(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(errorBody(500, "Internal Server Error", "An unexpected error occurred", request.getRequestURI()));
+            .body(errorBody(500, "Internal Server Error", "An unexpected error occurred",
+                request.getRequestURI()));
     }
 
+    // public — as per your debugged version
     public static Map<String, Object> errorBody(int status, String error, String message, String path) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", Instant.now().toString());

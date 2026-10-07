@@ -8,11 +8,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/**
- * Base class for integration tests that require a real PostgreSQL instance.
- * Uses Testcontainers to spin up a throwaway PostgreSQL container.
- * Subclasses inherit the container and profile configuration automatically.
- */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 @Testcontainers

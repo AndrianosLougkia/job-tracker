@@ -14,14 +14,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
 import java.io.IOException;
 
-/**
- * Intercepts every HTTP request and validates the JWT in the Authorization header.
- * On success, sets the authenticated principal in the SecurityContext.
- * On failure or absence of token, does nothing — Spring Security handles the 401.
- */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -37,29 +31,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain) throws ServletException, IOException {
+    protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                    @NonNull HttpServletResponse response,
+                                    @NonNull FilterChain filterChain)
+            throws ServletException, IOException {
 
         String authHeader = request.getHeader("Authorization");
-
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
-
         try {
             Long userId = jwtService.extractUserId(token);
             String email = jwtService.extractEmail(token);
-
-            // Only set authentication if not already set for this request
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userRepository.findByEmail(email)
-                    .orElse(null);
-
+                UserDetails userDetails = userRepository.findByEmail(email).orElse(null);
                 if (userDetails != null && jwtService.isTokenValid(token, userDetails)) {
                     var authToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
@@ -70,9 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         } catch (Exception e) {
             log.warn("Could not authenticate request: {}", e.getMessage());
-            // Do not set authentication — Spring Security will return 401
         }
-
         filterChain.doFilter(request, response);
     }
 }

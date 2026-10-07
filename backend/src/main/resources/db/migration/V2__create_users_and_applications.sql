@@ -1,9 +1,3 @@
--- V2__create_users_and_applications.sql
--- Stage 2: core domain tables.
-
--- ------------------------------------------------------------------ --
---  users                                                               --
--- ------------------------------------------------------------------ --
 CREATE TABLE users (
     id             BIGSERIAL    PRIMARY KEY,
     email          VARCHAR(255) NOT NULL UNIQUE,
@@ -11,20 +5,10 @@ CREATE TABLE users (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
-
 CREATE INDEX idx_users_email ON users (email);
 
--- ------------------------------------------------------------------ --
---  job_applications                                                    --
--- ------------------------------------------------------------------ --
 CREATE TYPE application_status AS ENUM (
-    'WISHLIST',
-    'APPLIED',
-    'SCREENING',
-    'INTERVIEW',
-    'OFFER',
-    'REJECTED',
-    'WITHDRAWN'
+    'WISHLIST','APPLIED','SCREENING','INTERVIEW','OFFER','REJECTED','WITHDRAWN'
 );
 
 CREATE TABLE job_applications (
@@ -39,7 +23,6 @@ CREATE TABLE job_applications (
     created_at       TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ        NOT NULL DEFAULT NOW()
 );
-
-CREATE INDEX idx_job_applications_user_id         ON job_applications (user_id);
-CREATE INDEX idx_job_applications_user_id_status  ON job_applications (user_id, status);
-CREATE INDEX idx_job_applications_created_at      ON job_applications (created_at DESC);
+CREATE INDEX idx_job_applications_user_id        ON job_applications (user_id);
+CREATE INDEX idx_job_applications_user_id_status ON job_applications (user_id, status);
+CREATE INDEX idx_job_applications_created_at     ON job_applications (created_at DESC);

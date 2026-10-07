@@ -10,14 +10,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 
-/**
- * REST controller for job application CRUD.
- * User identity is extracted from the validated JWT principal via @AuthenticationPrincipal.
- * The client never supplies a user ID — ownership is fully server-enforced.
- */
 @RestController
 @RequestMapping("/applications")
 @Tag(name = "Applications", description = "Job application CRUD")
@@ -25,7 +19,6 @@ import java.util.List;
 public class ApplicationController {
 
     private final ApplicationService applicationService;
-
     public ApplicationController(ApplicationService applicationService) {
         this.applicationService = applicationService;
     }
@@ -38,9 +31,7 @@ public class ApplicationController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Get a single application by ID")
-    public ApplicationResponse get(
-            @PathVariable Long id,
-            @AuthenticationPrincipal User user) {
+    public ApplicationResponse get(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return applicationService.getApplication(id, user.getId());
     }
 
@@ -49,14 +40,13 @@ public class ApplicationController {
     public ResponseEntity<ApplicationResponse> create(
             @Valid @RequestBody CreateApplicationRequest request,
             @AuthenticationPrincipal User user) {
-        ApplicationResponse created = applicationService.createApplication(request, user.getId());
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(applicationService.createApplication(request, user.getId()));
     }
 
     @PatchMapping("/{id}")
     @Operation(summary = "Update an existing application (partial update)")
-    public ApplicationResponse update(
-            @PathVariable Long id,
+    public ApplicationResponse update(@PathVariable Long id,
             @Valid @RequestBody UpdateApplicationRequest request,
             @AuthenticationPrincipal User user) {
         return applicationService.updateApplication(id, request, user.getId());
@@ -65,9 +55,7 @@ public class ApplicationController {
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete an application")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(
-            @PathVariable Long id,
-            @AuthenticationPrincipal User user) {
+    public void delete(@PathVariable Long id, @AuthenticationPrincipal User user) {
         applicationService.deleteApplication(id, user.getId());
     }
 }

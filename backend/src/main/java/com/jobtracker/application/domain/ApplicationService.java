@@ -8,16 +8,8 @@ import com.jobtracker.user.domain.User;
 import com.jobtracker.user.domain.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 
-/**
- * Business logic for job application CRUD.
- *
- * Every method accepts an explicit userId sourced from the authenticated principal —
- * never from the request body. This makes ownership enforcement impossible to forget
- * when Stage 3 wires in real JWT authentication.
- */
 @Service
 @Transactional
 public class ApplicationService {
@@ -31,67 +23,42 @@ public class ApplicationService {
         this.userRepository = userRepository;
     }
 
-    // ------------------------------------------------------------------ //
-    //  Queries                                                            //
-    // ------------------------------------------------------------------ //
-
     @Transactional(readOnly = true)
     public List<ApplicationResponse> listApplications(Long userId) {
-        return applicationRepository
-            .findByUserIdOrderByCreatedAtDesc(userId)
-            .stream()
-            .map(ApplicationResponse::from)
-            .toList();
+        return applicationRepository.findByUserIdOrderByCreatedAtDesc(userId)
+            .stream().map(ApplicationResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public ApplicationResponse getApplication(Long id, Long userId) {
-        JobApplication app = findOwnedOrThrow(id, userId);
-        return ApplicationResponse.from(app);
+        return ApplicationResponse.from(findOwnedOrThrow(id, userId));
     }
-
-    // ------------------------------------------------------------------ //
-    //  Commands                                                           //
-    // ------------------------------------------------------------------ //
 
     public ApplicationResponse createApplication(CreateApplicationRequest request, Long userId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> ResourceNotFoundException.user(userId));
-
         JobApplication app = new JobApplication(user, request.getCompany(), request.getRole());
         app.setJobDescription(request.getJobDescription());
         app.setNotes(request.getNotes());
         app.setAppliedAt(request.getAppliedAt());
-
         return ApplicationResponse.from(applicationRepository.save(app));
     }
 
     public ApplicationResponse updateApplication(Long id, UpdateApplicationRequest request, Long userId) {
         JobApplication app = findOwnedOrThrow(id, userId);
-
         if (request.getCompany() != null)        app.setCompany(request.getCompany());
         if (request.getRole() != null)           app.setRole(request.getRole());
         if (request.getStatus() != null)         app.setStatus(request.getStatus());
         if (request.getJobDescription() != null) app.setJobDescription(request.getJobDescription());
         if (request.getNotes() != null)          app.setNotes(request.getNotes());
         if (request.getAppliedAt() != null)      app.setAppliedAt(request.getAppliedAt());
-
         return ApplicationResponse.from(applicationRepository.save(app));
     }
 
     public void deleteApplication(Long id, Long userId) {
-        JobApplication app = findOwnedOrThrow(id, userId);
-        applicationRepository.delete(app);
+        applicationRepository.delete(findOwnedOrThrow(id, userId));
     }
 
-    // ------------------------------------------------------------------ //
-    //  Internal helpers                                                   //
-    // ------------------------------------------------------------------ //
-
-    /**
-     * Loads an application and verifies ownership in a single query.
-     * Returns 404 for both "not found" and "not yours" — see architecture doc section 9.
-     */
     private JobApplication findOwnedOrThrow(Long id, Long userId) {
         return applicationRepository.findByIdAndUserId(id, userId)
             .orElseThrow(() -> ResourceNotFoundException.application(id));

@@ -9,21 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
-
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
-/**
- * Handles JWT creation and validation.
- * Uses HS256 with a secret key supplied via environment variable.
- *
- * Claims stored in the token:
- *   sub  — userId (Long, as string)
- *   email — user email
- *   iat  — issued at
- *   exp  — expiry
- */
 @Service
 public class JwtService {
 
@@ -32,20 +21,14 @@ public class JwtService {
     private final SecretKey signingKey;
     private final long expirationMs;
 
-    public JwtService(
-            @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.expiration-ms}") long expirationMs) {
-
-        if (secret.length() < 32) {
-            throw new IllegalArgumentException(
-                "JWT secret must be at least 32 characters (256 bits). " +
-                "Set app.jwt.secret in your environment.");
-        }
+    public JwtService(@Value("${app.jwt.secret}") String secret,
+                      @Value("${app.jwt.expiration-ms}") long expirationMs) {
+        if (secret.length() < 32)
+            throw new IllegalArgumentException("JWT secret must be at least 32 characters.");
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMs = expirationMs;
     }
 
-    /** Issues a signed JWT for the given user. */
     public String generateToken(Long userId, String email) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
@@ -57,20 +40,14 @@ public class JwtService {
             .compact();
     }
 
-    /** Extracts the userId from a valid token. */
     public Long extractUserId(String token) {
         return Long.parseLong(parseClaims(token).getSubject());
     }
 
-    /** Extracts the email from a valid token. */
     public String extractEmail(String token) {
         return parseClaims(token).get("email", String.class);
     }
 
-    /**
-     * Returns true if the token is structurally valid, correctly signed,
-     * not expired, and the subject matches the given UserDetails username.
-     */
     public boolean isTokenValid(String token, UserDetails userDetails) {
         try {
             String email = extractEmail(token);
@@ -86,10 +63,7 @@ public class JwtService {
     }
 
     private Claims parseClaims(String token) {
-        return Jwts.parser()
-            .verifyWith(signingKey)
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+        return Jwts.parser().verifyWith(signingKey).build()
+            .parseSignedClaims(token).getPayload();
     }
 }

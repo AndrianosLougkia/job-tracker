@@ -2,16 +2,10 @@ package com.jobtracker.application.api;
 
 import com.jobtracker.application.domain.ApplicationStatus;
 import com.jobtracker.application.domain.JobApplication;
-
 import java.time.Instant;
 import java.time.LocalDate;
 
-/**
- * API response for a single job application.
- * Mapped from the JPA entity — the entity is never exposed directly.
- */
 public class ApplicationResponse {
-
     private Long id;
     private Long userId;
     private String company;
@@ -22,8 +16,6 @@ public class ApplicationResponse {
     private LocalDate appliedAt;
     private Instant createdAt;
     private Instant updatedAt;
-
-    // Static factory
 
     public static ApplicationResponse from(JobApplication app) {
         ApplicationResponse r = new ApplicationResponse();
@@ -40,16 +32,14 @@ public class ApplicationResponse {
         return r;
     }
 
-    // Getters (no setters — response is read-only)
-
-    public Long getId() { return id; }
-    public Long getUserId() { return userId; }
-    public String getCompany() { return company; }
-    public String getRole() { return role; }
+    public Long getId()                  { return id; }
+    public Long getUserId()              { return userId; }
+    public String getCompany()           { return company; }
+    public String getRole()              { return role; }
     public ApplicationStatus getStatus() { return status; }
-    public String getJobDescription() { return jobDescription; }
-    public String getNotes() { return notes; }
-    public LocalDate getAppliedAt() { return appliedAt; }
-    public Instant getCreatedAt() { return createdAt; }
-    public Instant getUpdatedAt() { return updatedAt; }
+    public String getJobDescription()    { return jobDescription; }
+    public String getNotes()             { return notes; }
+    public LocalDate getAppliedAt()      { return appliedAt; }
+    public Instant getCreatedAt()        { return createdAt; }
+    public Instant getUpdatedAt()        { return updatedAt; }
 }

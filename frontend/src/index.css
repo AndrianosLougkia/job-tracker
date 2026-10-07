@@ -26,16 +26,11 @@ body {
   min-height: 100vh;
 }
 
-a {
-  color: var(--color-primary);
-  text-decoration: none;
-}
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { cursor: pointer; font-family: inherit; }
+dd { margin: 0; }
 
-a:hover {
-  text-decoration: underline;
-}
-
-button {
-  cursor: pointer;
-  font-family: inherit;
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
