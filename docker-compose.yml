@@ -1,8 +1,5 @@
 services:
 
-  # ------------------------------------------------------------------ #
-  #  PostgreSQL — primary database                                       #
-  # ------------------------------------------------------------------ #
   postgres:
     image: postgres:16-alpine
     container_name: jobtracker-postgres
@@ -23,14 +20,32 @@ services:
     networks:
       - jobtracker-net
 
-  # ------------------------------------------------------------------ #
-  #  Backend — Spring Boot application                                   #
-  # ------------------------------------------------------------------ #
+  minio:
+    image: minio/minio:latest
+    container_name: jobtracker-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jobtracker-net
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: builder          # Use the builder stage image during development for faster rebuilds
+      target: builder
     container_name: jobtracker-backend
     restart: unless-stopped
     env_file:
@@ -40,24 +55,25 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-jobtracker}
       DB_USERNAME: ${DB_USERNAME:-jobtracker}
       DB_PASSWORD: ${DB_PASSWORD:-jobtracker}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-resumes}
       SERVER_PORT: 8080
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     networks:
       - jobtracker-net
-    # For development: mount source and run with Maven so code changes trigger rebuild
-    # In production, remove this override and use the packaged JAR
     command: >
       sh -c "cd /build && mvn spring-boot:run
              -Dspring-boot.run.profiles=docker
              -Dspring-boot.run.jvmArguments='-Xmx512m'"
 
-  # ------------------------------------------------------------------ #
-  #  Frontend — React / Vite dev server                                  #
-  # ------------------------------------------------------------------ #
   frontend:
     build:
       context: ./frontend
@@ -70,37 +86,19 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     volumes:
-      - ./frontend/src:/app/src          # Hot-reload source changes
+      - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
     depends_on:
       - backend
     networks:
       - jobtracker-net
 
-  # ------------------------------------------------------------------ #
-  #  Redis — added in Stage 9 (placeholder entry commented out)         #
-  # ------------------------------------------------------------------ #
-  # redis:
-  #   image: redis:7-alpine
-  #   ...
-
-  # ------------------------------------------------------------------ #
-  #  MinIO — added in Stage 5 (placeholder entry commented out)         #
-  # ------------------------------------------------------------------ #
-  # minio:
-  #   image: minio/minio
-  #   ...
-
-  # ------------------------------------------------------------------ #
-  #  Ollama — optional LLM server (Stage 7)                             #
-  # ------------------------------------------------------------------ #
-  # ollama:
-  #   image: ollama/ollama
-  #   profiles: [ollama]
-  #   ...
+  # redis: (Stage 9)
+  # ollama: (Stage 7, optional profile)
 
 volumes:
   postgres-data:
+  minio-data:
 
 networks:
   jobtracker-net:

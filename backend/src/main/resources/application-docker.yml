@@ -1,3 +1,7 @@
 spring:
   datasource:
     url: jdbc:postgresql://postgres:5432/jobtracker
+
+app:
+  minio:
+    endpoint: http://minio:9000

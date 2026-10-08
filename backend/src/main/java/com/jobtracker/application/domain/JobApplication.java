@@ -2,12 +2,10 @@ package com.jobtracker.application.domain;
 
 import com.jobtracker.user.domain.User;
 import jakarta.persistence.*;
-import java.time.Instant;
-import java.time.LocalDate;
-
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
-
+import java.time.Instant;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "job_applications")

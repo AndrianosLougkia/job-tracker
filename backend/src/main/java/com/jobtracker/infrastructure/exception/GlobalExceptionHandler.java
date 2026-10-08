@@ -1,6 +1,9 @@
 package com.jobtracker.infrastructure.exception;
 
 import com.jobtracker.auth.domain.InvalidCredentialsException;
+import com.jobtracker.resume.domain.FileTooLargeException;
+import com.jobtracker.resume.domain.InvalidFileException;
+import com.jobtracker.resume.infrastructure.StorageException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +44,31 @@ public class GlobalExceptionHandler {
         log.warn("Login failed: {}", request.getRequestURI());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
             .body(errorBody(401, "Unauthorized", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(InvalidFileException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidFile(
+            InvalidFileException ex, HttpServletRequest request) {
+        log.warn("Invalid file: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(errorBody(400, "Bad Request", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(FileTooLargeException.class)
+    public ResponseEntity<Map<String, Object>> handleFileTooLarge(
+            FileTooLargeException ex, HttpServletRequest request) {
+        log.warn("File too large: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+            .body(errorBody(413, "Payload Too Large", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(StorageException.class)
+    public ResponseEntity<Map<String, Object>> handleStorage(
+            StorageException ex, HttpServletRequest request) {
+        log.error("Storage error: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(errorBody(503, "Service Unavailable", "Storage service is unavailable",
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
