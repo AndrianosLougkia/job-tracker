@@ -1,5 +1,7 @@
 package com.jobtracker.infrastructure.exception;
 
+import com.jobtracker.analysis.domain.AnalysisFailedException;
+import com.jobtracker.analysis.domain.AnalysisInputException;
 import com.jobtracker.auth.domain.InvalidCredentialsException;
 import com.jobtracker.resume.domain.FileTooLargeException;
 import com.jobtracker.resume.domain.InvalidFileException;
@@ -9,9 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -68,6 +72,40 @@ public class GlobalExceptionHandler {
         log.error("Storage error: {}", ex.getMessage(), ex);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
             .body(errorBody(503, "Service Unavailable", "Storage service is unavailable",
+                request.getRequestURI()));
+    }
+
+    @ExceptionHandler(AnalysisInputException.class)
+    public ResponseEntity<Map<String, Object>> handleAnalysisInput(
+            AnalysisInputException ex, HttpServletRequest request) {
+        log.warn("Analysis input rejected: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .body(errorBody(422, "Unprocessable Entity", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(AnalysisFailedException.class)
+    public ResponseEntity<Map<String, Object>> handleAnalysisFailed(
+            AnalysisFailedException ex, HttpServletRequest request) {
+        log.warn("Analysis {} failed: {}", ex.getAnalysisId(), ex.getMessage());
+        Map<String, Object> body = errorBody(502, "Bad Gateway", ex.getMessage(), request.getRequestURI());
+        body.put("analysisId", ex.getAnalysisId());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadableBody(
+            HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("Unreadable request body on {} {}", request.getMethod(), request.getRequestURI());
+        return ResponseEntity.badRequest()
+            .body(errorBody(400, "Bad Request", "Malformed request body", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        log.warn("Invalid parameter '{}' on {} {}", ex.getName(), request.getMethod(), request.getRequestURI());
+        return ResponseEntity.badRequest()
+            .body(errorBody(400, "Bad Request", "Invalid value for parameter '" + ex.getName() + "'",
                 request.getRequestURI()));
     }
 

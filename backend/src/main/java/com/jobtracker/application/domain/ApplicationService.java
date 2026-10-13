@@ -34,6 +34,15 @@ public class ApplicationService {
         return ApplicationResponse.from(findOwnedOrThrow(id, userId));
     }
 
+    /**
+     * Job description of an owned application, for other modules (e.g. analysis).
+     * Returns null if the application has no description.
+     */
+    @Transactional(readOnly = true)
+    public String getJobDescription(Long id, Long userId) {
+        return findOwnedOrThrow(id, userId).getJobDescription();
+    }
+
     public ApplicationResponse createApplication(CreateApplicationRequest request, Long userId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> ResourceNotFoundException.user(userId));

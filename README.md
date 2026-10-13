@@ -116,6 +116,28 @@ Key variables for Stage 1:
 
 ---
 
+## AI Analysis
+
+`POST /api/analyses` with `{"applicationId": 1, "resumeId": 2}` compares a resume's extracted
+text against the application's job description and returns a match score, matching and
+missing skills, strengths, recommendations, and a summary. `GET /api/analyses[?applicationId=]`
+and `GET /api/analyses/{id}` return stored results.
+
+The provider is chosen with `AI_PROVIDER` (default `mock`). The Mock provider runs offline and
+is deterministic: it matches a fixed vocabulary of technical skills, so the same inputs always
+produce the same result. Tests always use it. Claude and Ollama arrive in Stage 7.
+
+| Response | Meaning |
+|---|---|
+| `201` | Analysis completed |
+| `404` | Application or resume not found (or owned by another user) |
+| `422` | Missing job description, no extracted resume text, or input over `AI_MAX_INPUT_CHARS` |
+| `502` | The AI provider failed; the analysis is stored as `FAILED` and its ID is in `analysisId` |
+
+Analysis currently runs synchronously within the request; Stage 8 makes it asynchronous.
+
+---
+
 ## API Documentation
 
 Once the backend is running, Swagger UI is available at:
@@ -151,9 +173,9 @@ No manual database setup is required for tests.
 | 1 | Project Skeleton and Infrastructure | Done |
 | 2 | Database, Flyway, Domain, CRUD | Done |
 | 3 | Authentication and Authorization | Done |
-| 4 | React Job Tracker Interface | Pending |
-| 5 | MinIO, Resume Upload, PDF Extraction | Pending |
-| 6 | AI Abstraction and Mock Provider | Pending |
+| 4 | React Job Tracker Interface | Done |
+| 5 | MinIO, Resume Upload, PDF Extraction | Done |
+| 6 | AI Abstraction and Mock Provider | Done |
 | 7 | Spring AI, Claude, and Ollama | Pending |
 | 8 | Async Analysis and WebSocket Notifications | Pending |
 | 9 | Redis Dashboard Caching | Pending |

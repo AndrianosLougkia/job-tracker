@@ -56,6 +56,11 @@ app:
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:resumes}
+  ai:
+    # Active AI provider: mock (default; offline and deterministic) | claude | ollama (Stage 7)
+    provider: ${AI_PROVIDER:mock}
+    # Upper bound on resume text and job description length sent to the provider
+    max-input-chars: ${AI_MAX_INPUT_CHARS:50000}
 
 logging:
   level:

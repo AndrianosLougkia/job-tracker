@@ -8,3 +8,7 @@ logging:
     com.jobtracker: DEBUG
     org.flywaydb: DEBUG
     org.testcontainers: INFO
+
+app:
+  ai:
+    provider: mock   # tests never call an external AI service

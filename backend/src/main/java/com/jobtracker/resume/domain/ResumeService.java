@@ -54,6 +54,15 @@ public class ResumeService {
         return ResumeResponse.from(findOwnedOrThrow(id, userId));
     }
 
+    /**
+     * Extracted text of an owned resume, for other modules (e.g. analysis).
+     * Returns null if PDF text extraction failed at upload time.
+     */
+    @Transactional(readOnly = true)
+    public String getExtractedText(Long id, Long userId) {
+        return findOwnedOrThrow(id, userId).getExtractedText();
+    }
+
     // ------------------------------------------------------------------ //
     //  Commands                                                           //
     // ------------------------------------------------------------------ //
