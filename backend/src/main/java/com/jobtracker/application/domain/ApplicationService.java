@@ -47,6 +47,7 @@ public class ApplicationService {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> ResourceNotFoundException.user(userId));
         JobApplication app = new JobApplication(user, request.getCompany(), request.getRole());
+        if (request.getStatus() != null) app.setStatus(request.getStatus());
         app.setJobDescription(request.getJobDescription());
         app.setNotes(request.getNotes());
         app.setAppliedAt(request.getAppliedAt());

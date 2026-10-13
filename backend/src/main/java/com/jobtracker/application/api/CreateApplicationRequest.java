@@ -1,5 +1,6 @@
 package com.jobtracker.application.api;
 
+import com.jobtracker.application.domain.ApplicationStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ public class CreateApplicationRequest {
     @Size(max = 255, message = "Role must not exceed 255 characters")
     private String role;
 
+    private ApplicationStatus status;   // optional; defaults to WISHLIST
     private String jobDescription;
     private String notes;
     private LocalDate appliedAt;
@@ -21,6 +23,8 @@ public class CreateApplicationRequest {
     public void setCompany(String c)     { this.company = c; }
     public String getRole()              { return role; }
     public void setRole(String r)        { this.role = r; }
+    public ApplicationStatus getStatus() { return status; }
+    public void setStatus(ApplicationStatus s) { this.status = s; }
     public String getJobDescription()    { return jobDescription; }
     public void setJobDescription(String j) { this.jobDescription = j; }
     public String getNotes()             { return notes; }

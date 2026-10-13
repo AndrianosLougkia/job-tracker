@@ -4,6 +4,7 @@ import type { Application, ApplicationStatus } from '../types'
 export interface CreateApplicationPayload {
   company: string
   role: string
+  status?: ApplicationStatus
   jobDescription?: string
   notes?: string
   appliedAt?: string

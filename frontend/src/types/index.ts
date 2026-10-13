@@ -34,3 +34,23 @@ export interface ApiError {
   path: string
   errors?: string[]
 }
+
+export type AnalysisStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+
+/** Result fields are null unless status is COMPLETED; errorMessage is set only when FAILED. */
+export interface Analysis {
+  id: number
+  applicationId: number
+  resumeId: number
+  status: AnalysisStatus
+  provider: string
+  matchScore: number | null
+  matchingSkills: string[] | null
+  missingSkills: string[] | null
+  strengths: string[] | null
+  recommendations: string[] | null
+  summary: string | null
+  errorMessage: string | null
+  createdAt: string
+  completedAt: string | null
+}

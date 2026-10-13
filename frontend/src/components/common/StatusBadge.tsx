@@ -26,3 +26,31 @@ export function StatusBadge({ status }: { status: ApplicationStatus }) {
     </span>
   )
 }
+
+/**
+ * Status dropdown styled like a StatusBadge, for changing status in place
+ * (e.g. directly in the applications table).
+ */
+export function StatusSelect({ value, onChange, disabled, ariaLabel = 'Status' }: {
+  value: ApplicationStatus
+  onChange: (status: ApplicationStatus) => void
+  disabled?: boolean
+  ariaLabel?: string
+}) {
+  const cfg = STATUS_CONFIG[value] ?? { bg: '#f1f5f9', color: '#475569' }
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      disabled={disabled}
+      onChange={e => onChange(e.target.value as ApplicationStatus)}
+      style={{
+        padding: '0.2rem 0.4rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600,
+        background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}33`,
+        cursor: disabled ? 'wait' : 'pointer', opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      {ALL_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
+    </select>
+  )
+}

@@ -1,16 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { listApplications, createApplication, deleteApplication } from '../api/applications'
+import { listApplications, createApplication, deleteApplication, updateApplication } from '../api/applications'
 import { AppShell } from '../components/common/AppShell'
-import { StatusBadge, ALL_STATUSES } from '../components/common/StatusBadge'
+import { StatusSelect, ALL_STATUSES, statusLabel } from '../components/common/StatusBadge'
 import { Card, PageHeader, Button, Input, Textarea, Select, Alert, Spinner, EmptyState } from '../components/common'
-import type { Application } from '../types'
+import type { Application, ApplicationStatus } from '../types'
 
 export default function ApplicationsPage() {
   const [apps, setApps]         = useState<Application[]>([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [savingId, setSavingId] = useState<number | null>(null)
 
   function load() {
     setLoading(true)
@@ -21,6 +22,23 @@ export default function ApplicationsPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Optimistic: show the new status immediately, roll back if the save fails.
+  async function handleStatusChange(app: Application, status: ApplicationStatus) {
+    if (status === app.status) return
+    setError(null)
+    setSavingId(app.id)
+    setApps(prev => prev.map(a => a.id === app.id ? { ...a, status } : a))
+    try {
+      const updated = await updateApplication(app.id, { status })
+      setApps(prev => prev.map(a => a.id === app.id ? updated : a))
+    } catch {
+      setApps(prev => prev.map(a => a.id === app.id ? app : a))
+      setError(`Failed to update status for ${app.company}.`)
+    } finally {
+      setSavingId(null)
+    }
+  }
 
   async function handleDelete(id: number) {
     if (!confirm('Delete this application?')) return
@@ -79,7 +97,10 @@ export default function ApplicationsPage() {
                     {app.role}
                   </td>
                   <td style={{ padding: '0.75rem 1rem' }}>
-                    <StatusBadge status={app.status} />
+                    <StatusSelect value={app.status}
+                      ariaLabel={`Status for ${app.company}`}
+                      disabled={savingId === app.id}
+                      onChange={s => handleStatusChange(app, s)} />
                   </td>
                   <td style={{ padding: '0.75rem 1rem', color: 'var(--color-text-muted)' }}>
                     {app.appliedAt
@@ -110,7 +131,7 @@ function CreateApplicationForm({
   const [jd, setJd]             = useState('')
   const [notes, setNotes]       = useState('')
   const [appliedAt, setAppliedAt] = useState('')
-  const [status, setStatus]     = useState('WISHLIST')
+  const [status, setStatus]     = useState<ApplicationStatus>('WISHLIST')
   const [errors, setErrors]     = useState<Record<string, string>>({})
   const [loading, setLoading]   = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
@@ -125,7 +146,7 @@ function CreateApplicationForm({
     setLoading(true)
     try {
       const app = await createApplication({
-        company, role,
+        company, role, status,
         jobDescription: jd || undefined,
         notes: notes || undefined,
         appliedAt: appliedAt || undefined,
@@ -151,8 +172,13 @@ function CreateApplicationForm({
           <Input label="Role" value={role} onChange={e => setRole(e.target.value)}
             error={errors.role} />
         </div>
-        <Input label="Applied date (optional)" type="date" value={appliedAt}
-          onChange={e => setAppliedAt(e.target.value)} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <Select label="Status" value={status}
+            onChange={e => setStatus(e.target.value as ApplicationStatus)}
+            options={ALL_STATUSES.map(s => ({ value: s, label: statusLabel(s) }))} />
+          <Input label="Applied date (optional)" type="date" value={appliedAt}
+            onChange={e => setAppliedAt(e.target.value)} />
+        </div>
         <Textarea label="Job description (optional)" value={jd}
           onChange={e => setJd(e.target.value)} />
         <Textarea label="Notes (optional)" value={notes}

@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { getApplication, updateApplication, deleteApplication } from '../api/applications'
 import { AppShell } from '../components/common/AppShell'
-import { StatusBadge, ALL_STATUSES, statusLabel } from '../components/common/StatusBadge'
+import { StatusSelect, ALL_STATUSES, statusLabel } from '../components/common/StatusBadge'
+import { AnalysisPanel } from '../components/analysis/AnalysisPanel'
 import { Card, PageHeader, Button, Input, Textarea, Select, Alert, Spinner } from '../components/common'
 import type { Application, ApplicationStatus } from '../types'
 
@@ -14,6 +15,7 @@ export default function ApplicationDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [savingStatus, setSavingStatus] = useState(false)
 
   useEffect(() => {
     getApplication(Number(id))
@@ -21,6 +23,22 @@ export default function ApplicationDetailPage() {
       .catch(() => setError('Application not found.'))
       .finally(() => setLoading(false))
   }, [id])
+
+  async function handleStatusChange(status: ApplicationStatus) {
+    if (!app || status === app.status) return
+    const previous = app
+    setApp({ ...app, status })
+    setSavingStatus(true)
+    setError(null)
+    try {
+      setApp(await updateApplication(app.id, { status }))
+    } catch {
+      setApp(previous)
+      setError('Failed to update status.')
+    } finally {
+      setSavingStatus(false)
+    }
+  }
 
   async function handleDelete() {
     if (!confirm('Delete this application?')) return
@@ -33,7 +51,7 @@ export default function ApplicationDetailPage() {
   }
 
   if (loading) return <AppShell><div style={{ textAlign: 'center', padding: '3rem' }}><Spinner /></div></AppShell>
-  if (error || !app) return <AppShell><Alert message={error ?? 'Not found.'} /></AppShell>
+  if (!app) return <AppShell><Alert message={error ?? 'Not found.'} /></AppShell>
 
   return (
     <AppShell>
@@ -49,22 +67,32 @@ export default function ApplicationDetailPage() {
         }
       />
 
+      {error && <div style={{ marginBottom: '1rem' }}><Alert message={error} /></div>}
+
       {editing ? (
         <EditForm app={app} onSaved={updated => { setApp(updated); setEditing(false) }} />
       ) : (
-        <ViewDetail app={app} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <ViewDetail app={app} savingStatus={savingStatus} onStatusChange={handleStatusChange} />
+          <AnalysisPanel applicationId={app.id} hasJobDescription={!!app.jobDescription?.trim()} />
+        </div>
       )}
     </AppShell>
   )
 }
 
-function ViewDetail({ app }: { app: Application }) {
+function ViewDetail({ app, savingStatus, onStatusChange }: {
+  app: Application
+  savingStatus: boolean
+  onStatusChange: (status: ApplicationStatus) => void
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <Card>
         <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem 1.5rem',
           fontSize: '0.875rem' }}>
-          <Dt>Status</Dt>     <dd><StatusBadge status={app.status} /></dd>
+          <Dt>Status</Dt>
+          <dd><StatusSelect value={app.status} disabled={savingStatus} onChange={onStatusChange} /></dd>
           <Dt>Company</Dt>    <dd>{app.company}</dd>
           <Dt>Role</Dt>       <dd>{app.role}</dd>
           <Dt>Applied</Dt>    <dd>{app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : '--'}</dd>

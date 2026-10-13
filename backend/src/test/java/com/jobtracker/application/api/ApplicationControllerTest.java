@@ -59,6 +59,21 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void createApplicationAcceptsInitialStatus() throws Exception {
+        CreateApplicationRequest req = new CreateApplicationRequest();
+        req.setCompany("Acme Corp");
+        req.setRole("Backend Engineer");
+        req.setStatus(ApplicationStatus.APPLIED);
+
+        mockMvc.perform(post("/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content(objectMapper.writeValueAsString(req)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.status").value("APPLIED"));
+    }
+
+    @Test
     void createApplicationReturns401WithNoToken() throws Exception {
         CreateApplicationRequest req = new CreateApplicationRequest();
         req.setCompany("Acme");
