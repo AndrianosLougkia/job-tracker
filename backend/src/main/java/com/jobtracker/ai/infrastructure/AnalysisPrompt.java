@@ -34,13 +34,16 @@ public final class AnalysisPrompt {
         Keep every list to at most 10 short items. Base the assessment only on the two texts.""";
 
     /**
-     * JSON Schema of the expected answer, for providers that can constrain output to a
-     * schema (Ollama's structured outputs). Mirrors the fields described in {@link #SYSTEM}.
+     * JSON Schema of the expected answer, for providers that constrain output to a schema
+     * (Ollama's {@code format}, Claude's structured outputs). Mirrors the fields described
+     * in {@link #SYSTEM}. Kept to the subset both support: the 0..100 score range is
+     * enforced by {@link AiResponseParser} rather than by numeric constraints here.
      */
     public static final Map<String, Object> RESPONSE_SCHEMA = Map.of(
         "type", "object",
+        "additionalProperties", false,
         "properties", Map.of(
-            "matchScore", Map.of("type", "integer", "minimum", 0, "maximum", 100),
+            "matchScore", Map.of("type", "integer"),
             "matchingSkills", stringArray(),
             "missingSkills", stringArray(),
             "strengths", stringArray(),

@@ -71,6 +71,15 @@ app:
       temperature: ${OLLAMA_TEMPERATURE:0.2}
       num-ctx: ${OLLAMA_NUM_CTX:8192}
       num-predict: ${OLLAMA_NUM_PREDICT:1024}
+    # Used only when provider=claude. Calls are billed to the Anthropic account behind the key.
+    claude:
+      api-key: ${ANTHROPIC_API_KEY:}
+      base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
+      model: ${CLAUDE_MODEL:claude-opus-5-5}
+      effort: ${CLAUDE_EFFORT:medium}
+      max-tokens: ${CLAUDE_MAX_TOKENS:16000}
+      timeout: ${CLAUDE_TIMEOUT:120s}
+      max-retries: ${CLAUDE_MAX_RETRIES:2}
 
 logging:
   level:
