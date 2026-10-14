@@ -12,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +27,7 @@ class ApplicationServiceTest {
 
     @Mock ApplicationRepository applicationRepository;
     @Mock UserRepository userRepository;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     @InjectMocks ApplicationService service;
 
@@ -77,6 +79,7 @@ class ApplicationServiceTest {
         assertThat(response.getCompany()).isEqualTo("Acme");
         assertThat(response.getRole()).isEqualTo("Engineer");
         verify(applicationRepository).save(any());
+        verify(eventPublisher).publishEvent(new ApplicationsChangedEvent(1L));
     }
 
     @Test
@@ -89,6 +92,7 @@ class ApplicationServiceTest {
 
         assertThatThrownBy(() -> service.createApplication(req, 999L))
             .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -106,6 +110,7 @@ class ApplicationServiceTest {
 
         assertThat(result.getStatus()).isEqualTo(ApplicationStatus.APPLIED);
         assertThat(result.getCompany()).isEqualTo("OldCo"); // unchanged
+        verify(eventPublisher).publishEvent(new ApplicationsChangedEvent(1L));
     }
 
     @Test
@@ -115,6 +120,45 @@ class ApplicationServiceTest {
 
         assertThatThrownBy(() -> service.deleteApplication(1L, 99L))
             .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void deleteApplicationPublishesChangeForOwner() {
+        JobApplication existing = new JobApplication(user, "Acme", "Dev");
+        setId(existing, 3L);
+        when(applicationRepository.findByIdAndUserId(3L, 1L)).thenReturn(Optional.of(existing));
+
+        service.deleteApplication(3L, 1L);
+
+        verify(applicationRepository).delete(existing);
+        verify(eventPublisher).publishEvent(new ApplicationsChangedEvent(1L));
+    }
+
+    @Test
+    void statisticsAreZeroFilledInStatusOrderAndTotalled() {
+        when(applicationRepository.countByStatus(1L)).thenReturn(List.of(
+            statusCount(ApplicationStatus.INTERVIEW, 2), statusCount(ApplicationStatus.APPLIED, 3)));
+        JobApplication recent = new JobApplication(user, "Acme", "Dev");
+        setId(recent, 4L);
+        when(applicationRepository.findTop5ByUserIdOrderByCreatedAtDescIdDesc(1L)).thenReturn(List.of(recent));
+
+        ApplicationStatistics stats = service.getStatistics(1L);
+
+        assertThat(stats.total()).isEqualTo(5);
+        assertThat(stats.byStatus().keySet()).containsExactly(ApplicationStatus.values());
+        assertThat(stats.byStatus()).containsEntry(ApplicationStatus.APPLIED, 3L)
+            .containsEntry(ApplicationStatus.INTERVIEW, 2L)
+            .containsEntry(ApplicationStatus.OFFER, 0L);
+        assertThat(stats.recent()).singleElement()
+            .satisfies(summary -> assertThat(summary.company()).isEqualTo("Acme"));
+    }
+
+    private static ApplicationRepository.StatusCount statusCount(ApplicationStatus status, long count) {
+        return new ApplicationRepository.StatusCount() {
+            @Override public ApplicationStatus getStatus() { return status; }
+            @Override public long getCount() { return count; }
+        };
     }
 
     // Reflection helper — sets the ID on entities that don't expose a setter

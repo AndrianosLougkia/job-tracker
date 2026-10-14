@@ -65,6 +65,9 @@ services:
       # in .env to use an Ollama running on the host instead.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      CACHE_TYPE: ${CACHE_TYPE:-redis}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       SERVER_PORT: 8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -74,6 +77,8 @@ services:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_started
+      redis:
         condition: service_started
     networks:
       - jobtracker-net
@@ -101,7 +106,30 @@ services:
     networks:
       - jobtracker-net
 
-  # redis: (Stage 9)
+  # Cache for dashboard statistics. Optional for correctness: the backend falls back
+  # to PostgreSQL when it is down. Configured as a pure cache: bounded memory with
+  # LRU eviction and no persistence, since every entry can be recomputed.
+  redis:
+    image: redis:8.10.2-alpine
+    container_name: jobtracker-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory ${REDIS_MAXMEMORY:-64mb}
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    ports:
+      # Host port for inspecting the cache (redis-cli -p 6380); 6380 avoids clashing
+      # with a Redis already installed on the host. The backend uses the internal network.
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jobtracker-net
 
   # ---- Optional local LLM: docker compose --profile ollama up ----
   # Only needed for AI_PROVIDER=ollama when Ollama is not installed on the host.

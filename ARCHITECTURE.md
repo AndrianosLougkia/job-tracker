@@ -551,24 +551,31 @@ Only dashboard statistics are cached. All other reads go directly to PostgreSQL.
 ### Cache key scheme
 
 ```
-dashboard:stats:{userId}
+jobtracker:dashboard:stats:{userId}
 ```
+
+Spring cache `dashboard:stats` with a configurable key prefix (`app.cache.key-prefix`,
+default `jobtracker:`) so several projects can share one Redis. Values are JSON written by a
+`Jackson2JsonRedisSerializer` bound to `DashboardStatsResponse`; no type information is stored.
 
 ### TTL
 
-5 minutes (configurable via `app.cache.dashboard-ttl-seconds`).
+5 minutes (configurable via `app.cache.dashboard-ttl`, `DASHBOARD_CACHE_TTL`).
 
 ### Invalidation triggers
 
-Cache entries for `userId` are evicted on any write to `job_applications` for that user:
-- Create application
-- Update application (including status change)
-- Delete application
+`ApplicationService` publishes `ApplicationsChangedEvent(userId)` on create, update (including
+status change) and delete. `DashboardCacheInvalidator` evicts that user's entry in a
+`@TransactionalEventListener(AFTER_COMMIT)`, so a concurrent read cannot re-cache pre-commit
+rows, and a rolled-back write evicts nothing.
 
 ### Fallback behavior
 
-If Redis is unavailable, the application **falls back to querying PostgreSQL directly**.
-A warning is logged. The response is not cached. No exception is propagated to the client.
+`LoggingCacheErrorHandler` logs cache errors at WARN and swallows them: a failed read is a miss
+(computed from PostgreSQL), a failed put is skipped, and a failed evict leaves an entry that
+expires within the TTL. Short Redis timeouts (500 ms) bound the added latency. The Redis health
+indicator is disabled so the optional cache never marks the app `DOWN`. `spring.cache.type=none`
+(`CACHE_TYPE=none`) disables caching entirely.
 
 ### User isolation
 
@@ -615,7 +622,7 @@ is logged; a compensating background task is a future improvement.
 | Service | Image | Purpose |
 |---|---|---|
 | `postgres` | `postgres:16` | Primary database |
-| `redis` | `redis:7-alpine` | Dashboard cache |
+| `redis` | `redis:8.10.2-alpine` | Dashboard cache (64 MB, LRU, no persistence) |
 | `minio` | `minio/minio` | Object storage |
 | `backend` | Built from `./backend` Dockerfile | Spring Boot application |
 | `frontend` | Built from `./frontend` Dockerfile | Vite dev server (or nginx in prod mode) |

@@ -15,7 +15,7 @@ module structure, entity model, flow diagrams, and configuration strategy.
 - Modular monolith backend (Spring Boot 3.5 / Java 21)
 - React 18 + Vite frontend
 - PostgreSQL primary store with Flyway migrations
-- Redis dashboard cache (Stage 9)
+- Redis cache for dashboard statistics (optional: falls back to PostgreSQL)
 - MinIO file storage for resume PDFs (Stage 5)
 - Three AI providers: Mock (default), Ollama (local models), Claude (Anthropic API)
 - Asynchronous analysis with WebSocket notifications (Stage 8)
@@ -28,7 +28,7 @@ module structure, entity model, flow diagrams, and configuration strategy.
 |---|---|
 | Backend | Java 21, Spring Boot 3.5, Spring Security, Spring Data JPA |
 | Database | PostgreSQL 16, Flyway |
-| Cache | Redis 7 |
+| Cache | Redis 8, Spring Cache abstraction |
 | Object storage | MinIO |
 | AI | Mock provider, Spring AI (Ollama), Anthropic Java SDK (Claude) |
 | PDF | Apache PDFBox |
@@ -282,6 +282,46 @@ refusal fallbacks are enabled.
 
 ---
 
+## Dashboard Cache (Redis)
+
+`GET /api/dashboard/stats` returns the signed-in user's application counts by status, interview
+and offer counts, the five most recent applications, and `generatedAt` (when the numbers were
+computed). The result is cached per user in Redis through Spring's cache abstraction.
+
+| | |
+|---|---|
+| Cache key | `jobtracker:dashboard:stats:{userId}` (prefix from `CACHE_KEY_PREFIX`) |
+| Value | JSON of the response, written with a serializer bound to that type (no class names stored) |
+| TTL | 5 minutes (`DASHBOARD_CACHE_TTL`) |
+| Invalidated when | The user creates, updates (including status changes) or deletes an application |
+
+**Invalidation rules.** Application writes publish an event; the user's key is deleted *after the
+transaction commits*. Deleting earlier would let a dashboard request arriving in between re-cache
+the old rows. A failed write (e.g. 404) commits nothing and evicts nothing. Writes by one user
+never touch another user's key.
+
+**User isolation.** The user ID is the whole key, taken from the authenticated principal, never
+from request input, so one user's entry cannot be read by another.
+
+**Fallback.** Cache errors are logged at WARN and ignored: a failed read is treated as a miss and
+the numbers are computed from PostgreSQL; a failed write simply is not cached. If Redis is down
+when an eviction runs, the stale entry can survive at most until its TTL expires, which bounds
+staleness to 5 minutes. Redis is excluded from `/actuator/health` so its absence never marks the
+application `DOWN`. Set `CACHE_TYPE=none` to run with no cache at all (e.g. on a host without Redis).
+
+**Operational considerations.**
+- While Redis is unreachable, each dashboard request pays the connection timeout on the cache read
+  and write (about 1 s with the default 500 ms `REDIS_TIMEOUT`/`REDIS_CONNECT_TIMEOUT`) and logs
+  warnings. Lower the timeouts or use `CACHE_TYPE=none` if Redis will be down for long.
+- The Compose Redis is a pure cache: `maxmemory 64mb` with `allkeys-lru` eviction and no
+  persistence (RDB/AOF off). Losing it only costs recomputation.
+- It runs without a password and its port is published on `127.0.0.1` only (host port 6380, so it
+  does not clash with a Redis installed on the host). Set `REDIS_PASSWORD` and keep the port
+  private for any shared deployment.
+- Inspect it with `docker exec -it jobtracker-redis redis-cli` (`KEYS 'jobtracker:*'`, `TTL <key>`).
+- When running the backend outside Docker, it uses `REDIS_HOST`/`REDIS_PORT` (default
+  `localhost:6379`), e.g. a Redis installed on your machine.
+
 ## API Documentation
 
 Once the backend is running, Swagger UI is available at:
@@ -329,7 +369,7 @@ OLLAMA_LIVE_TEST=true OLLAMA_MODEL=qwen2.5:3b mvn test -Dtest=OllamaLiveTest
 | 6 | AI Abstraction and Mock Provider | Done |
 | 7 | Spring AI, Claude, and Ollama | Done |
 | 8 | Async Analysis and WebSocket Notifications | Done |
-| 9 | Redis Dashboard Caching | Pending |
+| 9 | Redis Dashboard Caching | Done |
 | 10 | Testing, Hardening, Final Documentation | Pending |
 
 ---

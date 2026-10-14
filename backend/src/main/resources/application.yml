@@ -19,6 +19,19 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
     out-of-order: false
+  # Dashboard statistics cache. redis (default) | none to run without Redis
+  cache:
+    type: ${CACHE_TYPE:redis}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      # Short timeouts: when Redis is down, requests fall back to PostgreSQL quickly
+      timeout: ${REDIS_TIMEOUT:500ms}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:500ms}
+      repositories:
+        enabled: false
   servlet:
     multipart:
       enabled: true
@@ -39,6 +52,11 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    # Redis is an optional cache: the app is fully functional without it, so its
+    # absence must not mark the whole application DOWN.
+    redis:
+      enabled: false
 
 springdoc:
   api-docs:
@@ -51,6 +69,11 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-secret-key-minimum-32-chars-long!!}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  cache:
+    # Namespaces this app's keys in a Redis shared with other projects
+    key-prefix: ${CACHE_KEY_PREFIX:jobtracker:}
+    # Maximum age of cached dashboard statistics
+    dashboard-ttl: ${DASHBOARD_CACHE_TTL:5m}
   analysis:
     # Background analysis pool: max-size caps concurrent AI calls; queue-capacity caps waiting work
     executor:

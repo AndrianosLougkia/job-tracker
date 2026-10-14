@@ -1,27 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listApplications } from '../api/applications'
+import { getDashboardStats } from '../api/dashboard'
 import { AppShell } from '../components/common/AppShell'
 import { Card, PageHeader, Spinner, Alert } from '../components/common'
 import { StatusBadge } from '../components/common/StatusBadge'
-import type { Application, ApplicationStatus } from '../types'
+import type { ApplicationStatus, DashboardStats } from '../types'
 
 const STAT_STATUSES: ApplicationStatus[] = ['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER']
 
 export default function DashboardPage() {
-  const [apps, setApps]     = useState<Application[]>([])
+  const [stats, setStats]     = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
 
   useEffect(() => {
-    listApplications()
-      .then(setApps)
-      .catch(() => setError('Failed to load applications.'))
+    getDashboardStats()
+      .then(setStats)
+      .catch(() => setError('Failed to load dashboard statistics.'))
       .finally(() => setLoading(false))
   }, [])
 
-  const countByStatus = (s: ApplicationStatus) => apps.filter(a => a.status === s).length
-  const recent = [...apps].slice(0, 5)
+  const recent = stats?.recentApplications ?? []
 
   return (
     <AppShell>
@@ -30,15 +29,15 @@ export default function DashboardPage() {
       {loading && <div style={{ textAlign: 'center', padding: '3rem' }}><Spinner /></div>}
       {error   && <Alert message={error} />}
 
-      {!loading && !error && (
+      {!loading && !error && stats && (
         <>
           {/* Stats row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
             gap: '1rem', marginBottom: '2rem' }}>
-            <StatCard label="Total" value={apps.length} />
+            <StatCard label="Total" value={stats.totalApplications} />
             {STAT_STATUSES.map(s => (
               <StatCard key={s} label={s.charAt(0) + s.slice(1).toLowerCase()}
-                value={countByStatus(s)} />
+                value={stats.byStatus[s] ?? 0} />
             ))}
           </div>
 
@@ -85,6 +84,10 @@ export default function DashboardPage() {
               </table>
             )}
           </Card>
+
+          <p style={{ marginTop: '0.75rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+            Statistics as of {new Date(stats.generatedAt).toLocaleTimeString()}
+          </p>
         </>
       )}
     </AppShell>

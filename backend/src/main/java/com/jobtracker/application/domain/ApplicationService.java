@@ -1,26 +1,36 @@
 package com.jobtracker.application.domain;
 
 import com.jobtracker.application.api.ApplicationResponse;
+import com.jobtracker.application.api.ApplicationSummary;
 import com.jobtracker.application.api.CreateApplicationRequest;
 import com.jobtracker.application.api.UpdateApplicationRequest;
 import com.jobtracker.infrastructure.exception.ResourceNotFoundException;
 import com.jobtracker.user.domain.User;
 import com.jobtracker.user.domain.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Transactional
 public class ApplicationService {
 
+    public static final int RECENT_LIMIT = 5;
+
     private final ApplicationRepository applicationRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ApplicationService(ApplicationRepository applicationRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               ApplicationEventPublisher eventPublisher) {
         this.applicationRepository = applicationRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -43,6 +53,20 @@ public class ApplicationService {
         return findOwnedOrThrow(id, userId).getJobDescription();
     }
 
+    /** Counts per status (zero-filled, enum order) and the most recent applications. */
+    @Transactional(readOnly = true)
+    public ApplicationStatistics getStatistics(Long userId) {
+        Map<ApplicationStatus, Long> byStatus = new LinkedHashMap<>();
+        Arrays.stream(ApplicationStatus.values()).forEach(status -> byStatus.put(status, 0L));
+        applicationRepository.countByStatus(userId)
+            .forEach(row -> byStatus.put(row.getStatus(), row.getCount()));
+        long total = byStatus.values().stream().mapToLong(Long::longValue).sum();
+
+        List<ApplicationSummary> recent = applicationRepository.findTop5ByUserIdOrderByCreatedAtDescIdDesc(userId)
+            .stream().map(ApplicationSummary::from).toList();
+        return new ApplicationStatistics(total, byStatus, recent);
+    }
+
     public ApplicationResponse createApplication(CreateApplicationRequest request, Long userId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> ResourceNotFoundException.user(userId));
@@ -51,7 +75,9 @@ public class ApplicationService {
         app.setJobDescription(request.getJobDescription());
         app.setNotes(request.getNotes());
         app.setAppliedAt(request.getAppliedAt());
-        return ApplicationResponse.from(applicationRepository.save(app));
+        ApplicationResponse created = ApplicationResponse.from(applicationRepository.save(app));
+        eventPublisher.publishEvent(new ApplicationsChangedEvent(userId));
+        return created;
     }
 
     public ApplicationResponse updateApplication(Long id, UpdateApplicationRequest request, Long userId) {
@@ -62,11 +88,14 @@ public class ApplicationService {
         if (request.getJobDescription() != null) app.setJobDescription(request.getJobDescription());
         if (request.getNotes() != null)          app.setNotes(request.getNotes());
         if (request.getAppliedAt() != null)      app.setAppliedAt(request.getAppliedAt());
-        return ApplicationResponse.from(applicationRepository.save(app));
+        ApplicationResponse updated = ApplicationResponse.from(applicationRepository.save(app));
+        eventPublisher.publishEvent(new ApplicationsChangedEvent(userId));
+        return updated;
     }
 
     public void deleteApplication(Long id, Long userId) {
         applicationRepository.delete(findOwnedOrThrow(id, userId));
+        eventPublisher.publishEvent(new ApplicationsChangedEvent(userId));
     }
 
     private JobApplication findOwnedOrThrow(Long id, Long userId) {

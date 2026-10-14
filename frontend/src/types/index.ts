@@ -63,3 +63,22 @@ export interface Analysis {
   createdAt: string
   completedAt: string | null
 }
+
+export interface ApplicationSummary {
+  id: number
+  company: string
+  role: string
+  status: ApplicationStatus
+  appliedAt: string | null
+  createdAt: string
+}
+
+/** GET /api/dashboard/stats. byStatus has every status, zero-filled. */
+export interface DashboardStats {
+  totalApplications: number
+  byStatus: Record<ApplicationStatus, number>
+  interviewCount: number
+  offerCount: number
+  recentApplications: ApplicationSummary[]
+  generatedAt: string
+}
