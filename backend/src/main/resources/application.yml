@@ -57,10 +57,20 @@ app:
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:resumes}
   ai:
-    # Active AI provider: mock (default; offline and deterministic) | claude | ollama (Stage 7)
+    # Active AI provider: mock (default; offline and deterministic) | ollama | claude
     provider: ${AI_PROVIDER:mock}
     # Upper bound on resume text and job description length sent to the provider
     max-input-chars: ${AI_MAX_INPUT_CHARS:50000}
+    # Used only when provider=ollama. Ollama does not need to be running for the app to start.
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      model: ${OLLAMA_MODEL:qwen2.5:3b}
+      connect-timeout: ${OLLAMA_CONNECT_TIMEOUT:5s}
+      # CPU-only machines can need a minute or more per analysis
+      read-timeout: ${OLLAMA_READ_TIMEOUT:180s}
+      temperature: ${OLLAMA_TEMPERATURE:0.2}
+      num-ctx: ${OLLAMA_NUM_CTX:8192}
+      num-predict: ${OLLAMA_NUM_PREDICT:1024}
 
 logging:
   level:
