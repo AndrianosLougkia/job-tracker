@@ -95,7 +95,8 @@ The following are explicitly out of scope for the current build:
 | **Flyway** | Versioned, repeatable database schema migrations |
 | **Redis** | Short-lived dashboard statistics cache; TTL-based invalidation |
 | **MinIO** | Object storage for resume PDF files |
-| **Spring AI** | Abstraction over LLM providers (Claude, Ollama) |
+| **Spring AI** | Ollama client behind `OllamaAiProvider` |
+| **Anthropic Java SDK** | Claude client behind `ClaudeAiProvider`; used instead of Spring AI's Anthropic module (1.1.x), which predates current Claude models' request requirements |
 | **Apache PDFBox** | Server-side PDF text extraction |
 | **Spring WebSocket + STOMP** | Push notifications for async analysis completion |
 | **Swagger / OpenAPI (springdoc)** | Auto-generated, interactive API documentation |
@@ -770,7 +771,7 @@ to structured JSON error responses.
 | PDF text extraction | Apache PDFBox |
 | File storage | MinIO (StoragePort abstraction) |
 | AI analysis (Mock) | `MockAiProvider`, hardcoded deterministic response |
-| AI analysis (Claude) | Spring AI, Anthropic Claude API |
+| AI analysis (Claude) | Anthropic Java SDK, Claude API (structured outputs) |
 | AI analysis (Ollama) | Spring AI, Ollama local server |
 | Async analysis processing | Spring `@Async`, `ThreadPoolTaskExecutor` |
 | Analysis status persistence | PostgreSQL, JPA |

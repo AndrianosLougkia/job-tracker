@@ -61,7 +61,13 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-resumes}
       AI_PROVIDER: ${AI_PROVIDER:-mock}
+      # Defaults to the optional ollama service below; set to http://host.docker.internal:11434
+      # in .env to use an Ollama running on the host instead.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       SERVER_PORT: 8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -96,11 +102,49 @@ services:
       - jobtracker-net
 
   # redis: (Stage 9)
-  # ollama: (Stage 7, optional profile)
+
+  # ---- Optional local LLM: docker compose --profile ollama up ----
+  # Only needed for AI_PROVIDER=ollama when Ollama is not installed on the host.
+  ollama:
+    image: ollama/ollama:0.35.0
+    container_name: jobtracker-ollama
+    restart: unless-stopped
+    profiles: ["ollama"]
+    environment:
+      # Keep the model in memory between analyses instead of reloading it each time
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jobtracker-net
+
+  # One-shot job that downloads OLLAMA_MODEL into the ollama volume, then exits.
+  # The first run downloads ~2 GB for the default model; later runs are instant.
+  ollama-pull:
+    image: ollama/ollama:0.35.0
+    container_name: jobtracker-ollama-pull
+    profiles: ["ollama"]
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - jobtracker-net
 
 volumes:
   postgres-data:
   minio-data:
+  ollama-data:
 
 networks:
   jobtracker-net:
