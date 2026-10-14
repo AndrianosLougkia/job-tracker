@@ -119,9 +119,14 @@ Key variables for Stage 1:
 ## AI Analysis
 
 `POST /api/analyses` with `{"applicationId": 1, "resumeId": 2}` compares a resume's extracted
-text against the application's job description and returns a match score, matching and
+text against the application's job description and produces a match score, matching and
 missing skills, strengths, recommendations, and a summary. `GET /api/analyses[?applicationId=]`
 and `GET /api/analyses/{id}` return stored results.
+
+Analyses run in the background. The request is validated, the analysis is stored as `PENDING`
+and the response returns immediately; a bounded thread pool then moves it to `PROCESSING` and
+finally `COMPLETED` or `FAILED`. When it finishes, the owner gets a WebSocket notification and
+the UI fetches the result.
 
 The provider is chosen with `AI_PROVIDER`: `mock` (default), `ollama` or `claude`. Every provider
 answers in the same JSON shape, which is validated by one parser before anything is stored.
@@ -131,12 +136,44 @@ message saying what to fix.
 
 | Response | Meaning |
 |---|---|
-| `201` | Analysis completed |
+| `202` | Analysis accepted (`PENDING`); `Location` points at `GET /api/analyses/{id}` |
 | `404` | Application or resume not found (or owned by another user) |
 | `422` | Missing job description, no extracted resume text, or input over `AI_MAX_INPUT_CHARS` |
-| `502` | The AI provider failed; the analysis is stored as `FAILED` and its ID is in `analysisId` |
 
-Analysis currently runs synchronously within the request; Stage 8 makes it asynchronous.
+Provider failures no longer surface as HTTP errors: the analysis ends as `FAILED` with a safe
+`errorMessage`. If the analysis queue is full, the analysis is returned already `FAILED` with a
+"try again" message. Analyses interrupted by a backend restart are marked `FAILED` on startup.
+
+### Real-time notifications (WebSocket / STOMP)
+
+| | |
+|---|---|
+| Endpoint | `ws://<host>/api/ws` (plain WebSocket, STOMP 1.2) |
+| Authentication | `Authorization: Bearer <jwt>` header on the STOMP `CONNECT` frame (never in the URL) |
+| Subscribe to | `/user/queue/analyses`, the only destination clients may subscribe to |
+| Client sends | Nothing; `SEND` frames are refused |
+
+Payload, sent when an analysis completes or fails:
+
+```json
+{ "analysisId": 42, "applicationId": 7, "status": "COMPLETED", "matchScore": 78,
+  "message": "Analysis complete: 78% match" }
+```
+
+Spring routes `/user/queue/analyses` to the sessions of the authenticated user only, so no client
+can name another user's queue. The frontend keeps one connection per signed-in user, reconnects
+every 5 seconds when it drops, shows a toast for each notification, and polls unfinished analyses
+while live updates are unavailable.
+
+| Variable | Default | Description |
+|---|---|---|
+| `WS_ALLOWED_ORIGINS` | `http://localhost:3000` | Browser origins allowed to open the WebSocket (comma-separated) |
+| `ANALYSIS_EXECUTOR_CORE_SIZE` | `4` | Background analysis threads kept ready |
+| `ANALYSIS_EXECUTOR_MAX_SIZE` | `8` | Maximum concurrent analyses, and so concurrent AI calls |
+| `ANALYSIS_EXECUTOR_QUEUE_CAPACITY` | `100` | Analyses that can wait before new ones are rejected |
+
+Background work and the message broker live in the backend process, so this design targets a
+single backend instance; scaling out would need a shared job store and an external STOMP broker.
 
 ### Mock (default)
 
@@ -291,7 +328,7 @@ OLLAMA_LIVE_TEST=true OLLAMA_MODEL=qwen2.5:3b mvn test -Dtest=OllamaLiveTest
 | 5 | MinIO, Resume Upload, PDF Extraction | Done |
 | 6 | AI Abstraction and Mock Provider | Done |
 | 7 | Spring AI, Claude, and Ollama | Done |
-| 8 | Async Analysis and WebSocket Notifications | Pending |
+| 8 | Async Analysis and WebSocket Notifications | Done |
 | 9 | Redis Dashboard Caching | Pending |
 | 10 | Testing, Hardening, Final Documentation | Pending |
 

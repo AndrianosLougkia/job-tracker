@@ -1,50 +1,49 @@
 package com.jobtracker.analysis.domain;
 
-import com.jobtracker.ai.domain.AiProvider;
-import com.jobtracker.ai.domain.AiProviderException;
 import com.jobtracker.ai.domain.AiProviderFactory;
 import com.jobtracker.ai.domain.AnalysisRequest;
-import com.jobtracker.ai.domain.AnalysisResult;
 import com.jobtracker.analysis.api.AnalysisResponse;
+import com.jobtracker.analysis.infrastructure.AsyncAnalysisProcessor;
 import com.jobtracker.application.domain.ApplicationService;
 import com.jobtracker.infrastructure.exception.ResourceNotFoundException;
 import com.jobtracker.resume.domain.ResumeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 /**
- * Runs resume-versus-job-description analyses and manages their lifecycle.
- *
- * Deliberately not transactional at class level: the AI call can be slow and must
- * not hold a database transaction open, and each status change is committed on its
- * own so a FAILED analysis is still persisted when the request ends in an error.
+ * Accepts resume-versus-job-description analyses and serves their results.
+ * Processing itself happens in {@link AsyncAnalysisProcessor}.
  */
 @Service
 public class AnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(AnalysisService.class);
-    static final String UNEXPECTED_FAILURE_MESSAGE = "Unexpected error while running AI analysis";
+    static final String QUEUE_FULL_MESSAGE = "Too many analyses are running; please try again in a few minutes";
 
     private final AnalysisRepository analysisRepository;
     private final ApplicationService applicationService;
     private final ResumeService resumeService;
     private final AiProviderFactory providerFactory;
+    private final AsyncAnalysisProcessor processor;
     private final int maxInputChars;
 
     public AnalysisService(AnalysisRepository analysisRepository,
                            ApplicationService applicationService,
                            ResumeService resumeService,
                            AiProviderFactory providerFactory,
+                           AsyncAnalysisProcessor processor,
                            @Value("${app.ai.max-input-chars:50000}") int maxInputChars) {
         this.analysisRepository = analysisRepository;
         this.applicationService = applicationService;
         this.resumeService = resumeService;
         this.providerFactory = providerFactory;
+        this.processor = processor;
         this.maxInputChars = maxInputChars;
     }
 
@@ -72,13 +71,15 @@ public class AnalysisService {
     // ------------------------------------------------------------------ //
 
     /**
-     * Analyse a resume against an application's job description.
-     * Both must belong to the user (404 otherwise) and contain usable text (422 otherwise).
-     * Runs synchronously; Stage 8 moves the provider call onto an async executor.
+     * Start analysing a resume against an application's job description.
+     * Both must belong to the user (404 otherwise) and contain usable text (422 otherwise);
+     * those checks run in the request. The AI call runs in the background, so this returns
+     * the analysis as PENDING and the owner is notified over WebSocket when it finishes.
      *
-     * @throws AnalysisFailedException if the provider fails; the FAILED analysis is persisted first
+     * Not transactional on purpose: the PENDING row must be committed before the
+     * background thread looks it up.
      */
-    public AnalysisResponse analyze(Long applicationId, Long resumeId, Long userId) {
+    public AnalysisResponse requestAnalysis(Long applicationId, Long resumeId, Long userId) {
         // Ownership checks happen inside the owning modules' services.
         String jobDescription = applicationService.getJobDescription(applicationId, userId);
         String resumeText = resumeService.getExtractedText(resumeId, userId);
@@ -88,27 +89,16 @@ public class AnalysisService {
         requireUsableText(resumeText, "Resume " + resumeId + " has no extracted text to analyse",
             "Resume text");
 
-        AiProvider provider = providerFactory.getProvider();
-        Analysis analysis = new Analysis(userId, applicationId, resumeId, provider.name());
-        analysis.markProcessing();
-        analysis = analysisRepository.save(analysis);
+        String providerName = providerFactory.getProvider().name();
+        Analysis analysis = analysisRepository.save(new Analysis(userId, applicationId, resumeId, providerName));
 
         try {
-            AnalysisResult result = provider.analyze(new AnalysisRequest(resumeText, jobDescription));
-            analysis.complete(result);
-        } catch (AiProviderException e) {
-            log.warn("AI provider '{}' failed for analysis {}: {}", provider.name(), analysis.getId(), e.getMessage());
-            analysis.fail(e.getMessage());
-        } catch (RuntimeException e) {
-            log.error("Unexpected failure in AI provider '{}' for analysis {}", provider.name(), analysis.getId(), e);
-            analysis.fail(UNEXPECTED_FAILURE_MESSAGE);
+            processor.process(analysis.getId(), new AnalysisRequest(resumeText, jobDescription));
+        } catch (TaskRejectedException e) {
+            log.warn("Analysis queue is full; rejecting analysis {}", analysis.getId());
+            analysis.fail(QUEUE_FULL_MESSAGE);
+            analysis = analysisRepository.save(analysis);
         }
-
-        analysis = analysisRepository.save(analysis);
-        if (analysis.getStatus() == AnalysisStatus.FAILED) {
-            throw new AnalysisFailedException(analysis.getId(), analysis.getErrorMessage());
-        }
-        log.debug("Analysis {} completed with score {}", analysis.getId(), analysis.getMatchScore());
         return AnalysisResponse.from(analysis);
     }
 

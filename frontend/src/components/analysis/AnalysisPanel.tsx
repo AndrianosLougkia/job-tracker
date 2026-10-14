@@ -1,13 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { createAnalysis, listAnalyses } from '../../api/analyses'
+import { createAnalysis, getAnalysis, listAnalyses } from '../../api/analyses'
 import { listResumes, type ResumeResponse } from '../../api/resumes'
+import { useNotifications } from '../../realtime/NotificationProvider'
 import { Card, Button, Select, Alert, Spinner } from '../common'
-import type { Analysis } from '../../types'
+import type { Analysis, AnalysisStatus } from '../../types'
+
+const POLL_INTERVAL_MS = 5_000
+
+const isUnfinished = (status: AnalysisStatus) => status === 'PENDING' || status === 'PROCESSING'
 
 /**
  * AI resume-versus-job-description analysis for one application:
  * pick a resume, run an analysis, view the result and earlier runs.
+ *
+ * Analyses finish in the background. A WebSocket notification triggers a refetch of the
+ * finished analysis; while the live connection is down, unfinished analyses are polled.
  */
 export function AnalysisPanel({ applicationId, hasJobDescription }: {
   applicationId: number
@@ -18,8 +26,25 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
   const [resumeId, setResumeId]     = useState<number | null>(null)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loading, setLoading]       = useState(true)
-  const [running, setRunning]       = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState<string | null>(null)
+  const { connection, onAnalysisNotification } = useNotifications()
+
+  // Read by the polling timer without restarting it on every update.
+  const analysesRef = useRef(analyses)
+  analysesRef.current = analyses
+  const hasUnfinished = analyses.some(a => isUnfinished(a.status))
+
+  const refresh = useCallback(async (id: number) => {
+    try {
+      const fresh = await getAnalysis(id)
+      setAnalyses(prev => prev.some(a => a.id === id)
+        ? prev.map(a => (a.id === id ? fresh : a))
+        : [fresh, ...prev])
+    } catch {
+      // Keep what is shown; the next notification or poll tries again.
+    }
+  }, [])
 
   useEffect(() => {
     Promise.all([listResumes(), listAnalyses(applicationId)])
@@ -33,6 +58,24 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
       .finally(() => setLoading(false))
   }, [applicationId])
 
+  // Live updates: fetch the finished analysis as soon as its notification arrives.
+  useEffect(() => onAnalysisNotification(n => {
+    if (n.applicationId === applicationId) refresh(n.analysisId)
+  }), [applicationId, onAnalysisNotification, refresh])
+
+  // Catch-up and fallback: refresh unfinished analyses whenever the connection state
+  // changes (a notification may have been missed while it was down), and poll them
+  // for as long as there is no live connection.
+  useEffect(() => {
+    if (!hasUnfinished) return
+    const refreshUnfinished = () =>
+      analysesRef.current.filter(a => isUnfinished(a.status)).forEach(a => refresh(a.id))
+    refreshUnfinished()
+    if (connection === 'connected') return
+    const timer = setInterval(refreshUnfinished, POLL_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [hasUnfinished, connection, refresh])
+
   const usableResumes = resumes.filter(r => r.textExtracted)
   const selected = analyses.find(a => a.id === selectedId) ?? null
   const resumeName = (id: number) =>
@@ -40,22 +83,16 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
 
   async function handleRun() {
     if (resumeId == null) return
-    setRunning(true)
+    setSubmitting(true)
     setError(null)
     try {
       const created = await createAnalysis(applicationId, resumeId)
       setAnalyses(prev => [created, ...prev])
       setSelectedId(created.id)
     } catch (err: any) {
-      const data = err.response?.data
-      setError(data?.message ?? 'Analysis failed. Please try again.')
-      // A provider failure (502) is still stored as a FAILED analysis; show it in the history.
-      if (data?.analysisId) {
-        listAnalyses(applicationId).then(a => { setAnalyses(a); setSelectedId(data.analysisId) })
-          .catch(() => {})
-      }
+      setError(err.response?.data?.message ?? 'Could not start the analysis. Please try again.')
     } finally {
-      setRunning(false)
+      setSubmitting(false)
     }
   }
 
@@ -73,11 +110,17 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
             hasAnyResume={resumes.length > 0}
             resumeId={resumeId}
             onResumeChange={setResumeId}
-            running={running}
+            submitting={submitting}
             onRun={handleRun}
           />
 
           {error && <Alert message={error} />}
+
+          {hasUnfinished && connection !== 'connected' && (
+            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+              Live updates are unavailable right now; checking for results every few seconds.
+            </p>
+          )}
 
           {selected && <AnalysisResultView analysis={selected} resumeName={resumeName(selected.resumeId)} />}
 
@@ -98,13 +141,13 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
 }
 
 function RunControls({ hasJobDescription, usableResumes, hasAnyResume, resumeId, onResumeChange,
-                       running, onRun }: {
+                       submitting, onRun }: {
   hasJobDescription: boolean
   usableResumes: ResumeResponse[]
   hasAnyResume: boolean
   resumeId: number | null
   onResumeChange: (id: number) => void
-  running: boolean
+  submitting: boolean
   onRun: () => void
 }) {
   if (!hasJobDescription) {
@@ -128,8 +171,8 @@ function RunControls({ hasJobDescription, usableResumes, hasAnyResume, resumeId,
           onChange={e => onResumeChange(Number(e.target.value))}
           options={usableResumes.map(r => ({ value: String(r.id), label: r.originalFilename }))} />
       </div>
-      <Button onClick={onRun} loading={running} disabled={resumeId == null}>
-        {running ? 'Analysing…' : 'Run analysis'}
+      <Button onClick={onRun} loading={submitting} disabled={resumeId == null}>
+        {submitting ? 'Starting…' : 'Run analysis'}
       </Button>
     </div>
   )
@@ -152,8 +195,15 @@ function AnalysisResultView({ analysis, resumeName }: { analysis: Analysis; resu
   }
   if (analysis.status !== 'COMPLETED' || analysis.matchScore == null) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-        <Spinner size={16} /> Analysis {analysis.status.toLowerCase()}…
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+          <Spinner size={16} /> {analysis.status === 'PENDING' ? 'Waiting to start…' : 'Analysing…'}
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+          This can take a minute or more with local models. You will get a notification when it is done,
+          so feel free to leave this page.
+        </p>
+        {meta}
       </div>
     )
   }
@@ -285,7 +335,9 @@ function AnalysisHistory({ analyses, selectedId, onSelect, resumeName }: {
               </span>
               {a.status === 'COMPLETED' && a.matchScore != null
                 ? <span style={{ color: scoreColor(a.matchScore), fontWeight: 700 }}>{a.matchScore}</span>
-                : <span style={{ color: 'var(--color-error)', fontSize: '0.75rem' }}>{a.status}</span>}
+                : isUnfinished(a.status)
+                  ? <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>Running…</span>
+                  : <span style={{ color: 'var(--color-error)', fontSize: '0.75rem' }}>{a.status}</span>}
             </button>
           )
         })}

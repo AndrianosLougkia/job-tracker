@@ -1,6 +1,5 @@
 package com.jobtracker.infrastructure.exception;
 
-import com.jobtracker.analysis.domain.AnalysisFailedException;
 import com.jobtracker.analysis.domain.AnalysisInputException;
 import com.jobtracker.auth.domain.InvalidCredentialsException;
 import com.jobtracker.resume.domain.FileTooLargeException;
@@ -81,15 +80,6 @@ public class GlobalExceptionHandler {
         log.warn("Analysis input rejected: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
             .body(errorBody(422, "Unprocessable Entity", ex.getMessage(), request.getRequestURI()));
-    }
-
-    @ExceptionHandler(AnalysisFailedException.class)
-    public ResponseEntity<Map<String, Object>> handleAnalysisFailed(
-            AnalysisFailedException ex, HttpServletRequest request) {
-        log.warn("Analysis {} failed: {}", ex.getAnalysisId(), ex.getMessage());
-        Map<String, Object> body = errorBody(502, "Bad Gateway", ex.getMessage(), request.getRequestURI());
-        body.put("analysisId", ex.getAnalysisId());
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

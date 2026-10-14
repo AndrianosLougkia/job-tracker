@@ -6,10 +6,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -37,11 +37,16 @@ public class AnalysisController {
     }
 
     @PostMapping
-    @Operation(summary = "Analyse a resume against an application's job description")
+    @Operation(summary = "Start analysing a resume against an application's job description",
+        description = "Returns 202 with the analysis in PENDING status. Processing continues in the background; "
+            + "the result is pushed to /user/queue/analyses over WebSocket and can be read from GET /analyses/{id}.")
     public ResponseEntity<AnalysisResponse> create(
             @Valid @RequestBody TriggerAnalysisRequest request,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-            .body(analysisService.analyze(request.getApplicationId(), request.getResumeId(), user.getId()));
+        AnalysisResponse analysis = analysisService.requestAnalysis(
+            request.getApplicationId(), request.getResumeId(), user.getId());
+        return ResponseEntity.accepted()
+            .location(URI.create("/api/analyses/" + analysis.getId()))
+            .body(analysis);
     }
 }

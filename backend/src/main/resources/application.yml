@@ -51,6 +51,15 @@ app:
   jwt:
     secret: ${JWT_SECRET:dev-secret-key-minimum-32-chars-long!!}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  analysis:
+    # Background analysis pool: max-size caps concurrent AI calls; queue-capacity caps waiting work
+    executor:
+      core-size: ${ANALYSIS_EXECUTOR_CORE_SIZE:4}
+      max-size: ${ANALYSIS_EXECUTOR_MAX_SIZE:8}
+      queue-capacity: ${ANALYSIS_EXECUTOR_QUEUE_CAPACITY:100}
+  websocket:
+    # Browser origins allowed to open the notification WebSocket (comma-separated, wildcards allowed)
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:3000}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:minioadmin}

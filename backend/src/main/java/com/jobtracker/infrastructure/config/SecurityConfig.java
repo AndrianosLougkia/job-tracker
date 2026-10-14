@@ -40,6 +40,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/**").permitAll()
                 .requestMatchers("/health").permitAll()
+                // The WebSocket handshake is open; StompAuthChannelInterceptor authenticates
+                // the STOMP CONNECT frame and refuses everything before it.
+                .requestMatchers("/ws", "/ws/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
                                  "/v3/api-docs/**", "/v3/api-docs").permitAll()

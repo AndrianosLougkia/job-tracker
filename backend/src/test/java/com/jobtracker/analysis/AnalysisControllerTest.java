@@ -25,16 +25,20 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
  * End-to-end analysis flow against PostgreSQL, using the deterministic Mock provider.
+ * Analyses run on the real background executor, so tests wait for the final status.
  */
 @AutoConfigureMockMvc
 class AnalysisControllerTest extends AbstractIntegrationTest {
@@ -75,14 +79,23 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
     // ------------------------------------------------------------------ //
 
     @Test
-    void createAnalysisReturnsMockResultAndPersistsIt() throws Exception {
+    void createReturns202PendingThenCompletesInTheBackground() throws Exception {
         String json = trigger(applicationId, resumeId, authHeader)
-            .andExpect(status().isCreated())
+            .andExpect(status().isAccepted())
+            .andExpect(header().string("Location", matchesPattern("/api/analyses/\\d+")))
             .andExpect(jsonPath("$.id").isNumber())
             .andExpect(jsonPath("$.applicationId").value(applicationId))
             .andExpect(jsonPath("$.resumeId").value(resumeId))
-            .andExpect(jsonPath("$.status").value("COMPLETED"))
+            .andExpect(jsonPath("$.status").value(anyOf(is("PENDING"), is("PROCESSING"), is("COMPLETED"))))
             .andExpect(jsonPath("$.provider").value("mock"))
+            .andReturn().getResponse().getContentAsString();
+
+        Long id = objectMapper.readTree(json).get("id").asLong();
+        awaitFinished(id);
+
+        mockMvc.perform(get("/analyses/" + id).header("Authorization", authHeader))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("COMPLETED"))
             .andExpect(jsonPath("$.matchScore").value(60))
             .andExpect(jsonPath("$.matchingSkills", contains("Java", "Spring Boot", "PostgreSQL")))
             .andExpect(jsonPath("$.missingSkills", contains("Kubernetes", "AWS")))
@@ -90,10 +103,8 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.recommendations", hasSize(2)))
             .andExpect(jsonPath("$.summary").value("Moderate match: the resume covers 3 of 5 required skills (60%)."))
             .andExpect(jsonPath("$.errorMessage").doesNotExist())
-            .andExpect(jsonPath("$.completedAt").isNotEmpty())
-            .andReturn().getResponse().getContentAsString();
+            .andExpect(jsonPath("$.completedAt").isNotEmpty());
 
-        Long id = objectMapper.readTree(json).get("id").asLong();
         Analysis stored = analysisRepository.findById(id).orElseThrow();
         assertThat(stored.getStatus()).isEqualTo(AnalysisStatus.COMPLETED);
         assertThat(stored.getUserId()).isEqualTo(user.getId());
@@ -117,7 +128,7 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
     void listAnalysesFiltersByApplication() throws Exception {
         createAnalysis();
         Long otherAppId = saveApplication(user, "Python and Django role").getId();
-        trigger(otherAppId, resumeId, authHeader).andExpect(status().isCreated());
+        awaitFinished(triggerAndGetId(otherAppId));
 
         mockMvc.perform(get("/analyses").header("Authorization", authHeader))
             .andExpect(status().isOk())
@@ -242,16 +253,12 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
     // ------------------------------------------------------------------ //
 
     @Test
-    void providerFailureReturns502AndPersistsFailedAnalysis() throws Exception {
+    void providerFailureIsStoredAsFailedWithSafeMessage() throws Exception {
         doThrow(new AiProviderException("AI provider timed out")).when(mockAiProvider).analyze(any());
 
-        String json = trigger(applicationId, resumeId, authHeader)
-            .andExpect(status().isBadGateway())
-            .andExpect(jsonPath("$.message").value("AI analysis failed: AI provider timed out"))
-            .andExpect(jsonPath("$.analysisId").isNumber())
-            .andReturn().getResponse().getContentAsString();
+        Long id = triggerAndGetId(applicationId);
+        assertThat(awaitFinished(id)).isEqualTo(AnalysisStatus.FAILED);
 
-        Long id = objectMapper.readTree(json).get("analysisId").asLong();
         mockMvc.perform(get("/analyses/" + id).header("Authorization", authHeader))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("FAILED"))
@@ -259,9 +266,54 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
             .andExpect(jsonPath("$.matchScore").doesNotExist());
     }
 
+    @Test
+    void requestDoesNotWaitForTheAiProvider() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(inv -> {
+            release.await(10, TimeUnit.SECONDS);
+            return inv.callRealMethod();
+        }).when(mockAiProvider).analyze(any());
+
+        try {
+            String json = trigger(applicationId, resumeId, authHeader)
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value(anyOf(is("PENDING"), is("PROCESSING"))))
+                .andReturn().getResponse().getContentAsString();
+            Long id = objectMapper.readTree(json).get("id").asLong();
+
+            // While the provider is still blocked, the analysis is visible as in progress.
+            mockMvc.perform(get("/analyses/" + id).header("Authorization", authHeader))
+                .andExpect(jsonPath("$.status").value(anyOf(is("PENDING"), is("PROCESSING"))))
+                .andExpect(jsonPath("$.matchScore").doesNotExist());
+
+            release.countDown();
+            assertThat(awaitFinished(id)).isEqualTo(AnalysisStatus.COMPLETED);
+        } finally {
+            release.countDown();
+        }
+    }
+
     // ------------------------------------------------------------------ //
     //  Helpers                                                            //
     // ------------------------------------------------------------------ //
+
+    /** Polls until the background executor has moved the analysis to a final status. */
+    private AnalysisStatus awaitFinished(Long id) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            AnalysisStatus current = analysisRepository.findById(id).orElseThrow().getStatus();
+            if (current == AnalysisStatus.COMPLETED || current == AnalysisStatus.FAILED) return current;
+            Thread.sleep(50);
+        }
+        throw new AssertionError("Analysis " + id + " did not finish within 10s");
+    }
+
+    private Long triggerAndGetId(Long appId) throws Exception {
+        String json = trigger(appId, resumeId, authHeader)
+            .andExpect(status().isAccepted())
+            .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(json).get("id").asLong();
+    }
 
     private ResultActions trigger(Long appId, Long resId, String header) throws Exception {
         TriggerAnalysisRequest req = new TriggerAnalysisRequest();
@@ -275,10 +327,9 @@ class AnalysisControllerTest extends AbstractIntegrationTest {
     }
 
     private Long createAnalysis() throws Exception {
-        String json = trigger(applicationId, resumeId, authHeader)
-            .andExpect(status().isCreated())
-            .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(json).get("id").asLong();
+        Long id = triggerAndGetId(applicationId);
+        awaitFinished(id);
+        return id;
     }
 
     private JobApplication saveApplication(User owner, String jobDescription) {

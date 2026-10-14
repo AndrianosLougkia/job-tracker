@@ -37,6 +37,15 @@ export interface ApiError {
 
 export type AnalysisStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
 
+/** Pushed over WebSocket when an analysis finishes; fetch the full Analysis over REST. */
+export interface AnalysisNotification {
+  analysisId: number
+  applicationId: number
+  status: 'COMPLETED' | 'FAILED'
+  matchScore: number | null
+  message: string
+}
+
 /** Result fields are null unless status is COMPLETED; errorMessage is set only when FAILED. */
 export interface Analysis {
   id: number

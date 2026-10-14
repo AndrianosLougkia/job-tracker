@@ -495,20 +495,24 @@ Every row in every business table carries a `user_id` foreign key.
 
 ### Configuration
 
-- Endpoint: `/ws` (SockJS fallback enabled)
-- Application destination prefix: `/app`
-- Broker destinations: `/topic`, `/queue`
+- Endpoint: `/ws` (served at `/api/ws`), plain WebSocket. No SockJS: every supported
+  browser has native WebSocket, and SockJS's HTTP fallbacks would need their own auth handling.
+- Simple in-memory broker on `/queue`, 10 s heartbeats
+- Application destination prefix: `/app` (unused; clients cannot send)
+- Allowed browser origins: `app.websocket.allowed-origins` (`WS_ALLOWED_ORIGINS`)
 
 ### Topic design
 
-User-specific notifications use per-user queues:
+Notifications use Spring user destinations rather than a user ID in the topic name:
 
 ```
-/queue/analyses/{userId}
+server: convertAndSendToUser("<userId>", "/queue/analyses", payload)
+client: SUBSCRIBE /user/queue/analyses
 ```
 
-The backend publishes to this destination after analysis completion or failure.
-The client subscribes on login and processes incoming messages to update the UI.
+The session principal's name is the user ID, so Spring delivers each message only to that
+user's sessions. A `/queue/analyses/{userId}` topic would let any client subscribe to any ID
+unless every subscription were checked; with user destinations the client never names a user.
 
 ### Message payload
 
@@ -518,14 +522,23 @@ The client subscribes on login and processes incoming messages to update the UI.
   "applicationId": 7,
   "status": "COMPLETED",
   "matchScore": 78,
-  "message": "Analysis complete"
+  "message": "Analysis complete: 78% match"
 }
 ```
 
 ### Security
 
-WebSocket connections require a valid JWT, passed as a query parameter
-or in the STOMP `CONNECT` frame headers (implementation decision to be finalized in Stage 8).
+`StompAuthChannelInterceptor` checks every inbound STOMP frame:
+
+- `CONNECT` must carry `Authorization: Bearer <jwt>` as a STOMP header; it is validated like
+  the REST filter and sets the session principal. Tokens are not accepted as a query parameter,
+  where they would be written to access logs.
+- `SUBSCRIBE` is allowed only to `/user/queue/analyses`; resolved broker queues
+  (`/queue/analyses-user<session>`) and anything else are refused.
+- `SEND` is refused.
+
+The HTTP handshake on `/ws` is `permitAll` in Spring Security because browsers cannot add an
+`Authorization` header to it; nothing is reachable before an authenticated `CONNECT`.
 
 ---
 
@@ -775,7 +788,7 @@ to structured JSON error responses.
 | AI analysis (Ollama) | Spring AI, Ollama local server |
 | Async analysis processing | Spring `@Async`, `ThreadPoolTaskExecutor` |
 | Analysis status persistence | PostgreSQL, JPA |
-| Real-time notifications | Spring WebSocket, STOMP, SockJS |
+| Real-time notifications | Spring WebSocket, STOMP (native WebSocket, `@stomp/stompjs` client) |
 | Dashboard statistics | PostgreSQL aggregates, Redis cache |
 | API documentation | springdoc-openapi (Swagger UI) |
 | Health / metrics | Spring Boot Actuator |
@@ -1000,7 +1013,7 @@ sequenceDiagram
     participant AP as AsyncAnalysisProcessor
 
     C->>WS: STOMP CONNECT (with JWT)
-    C->>WS: SUBSCRIBE /queue/analyses/{userId}
+    C->>WS: SUBSCRIBE /user/queue/analyses
 
     Note over AP,NS: After async analysis finishes
 

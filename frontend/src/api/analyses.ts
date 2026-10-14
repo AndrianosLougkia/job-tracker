@@ -11,6 +11,7 @@ export async function getAnalysis(id: number): Promise<Analysis> {
   return res.data
 }
 
+/** Starts an analysis; it comes back PENDING and finishes in the background. */
 export async function createAnalysis(applicationId: number, resumeId: number): Promise<Analysis> {
   const res = await client.post('/analyses', { applicationId, resumeId })
   return res.data
