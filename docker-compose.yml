@@ -9,7 +9,8 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-jobtracker}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-jobtracker}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Localhost only: the database has a default password in development
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -29,8 +30,9 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      # Localhost only: the default credentials are public
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
       - ./minio.license:/minio.license:ro
@@ -73,11 +75,19 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      # The first start compiles the project, so allow a few minutes before failures count
+      # Actuator answers 503 when a component (database, MinIO) is down, which fails wget
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/api/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
     depends_on:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_started
     networks:

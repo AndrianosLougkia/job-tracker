@@ -5,6 +5,7 @@ import { listResumes, type ResumeResponse } from '../../api/resumes'
 import { useNotifications } from '../../realtime/NotificationProvider'
 import { Card, Button, Select, Alert, Spinner } from '../common'
 import type { Analysis, AnalysisStatus } from '../../types'
+import { apiErrorMessage } from '../../api/errors'
 
 const POLL_INTERVAL_MS = 5_000
 
@@ -54,7 +55,7 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
         setResumeId(r.find(x => x.textExtracted)?.id ?? null)
         setSelectedId(a[0]?.id ?? null)
       })
-      .catch(() => setError('Failed to load analyses.'))
+      .catch(err => setError(apiErrorMessage(err, 'Failed to load analyses.')))
       .finally(() => setLoading(false))
   }, [applicationId])
 
@@ -89,8 +90,8 @@ export function AnalysisPanel({ applicationId, hasJobDescription }: {
       const created = await createAnalysis(applicationId, resumeId)
       setAnalyses(prev => [created, ...prev])
       setSelectedId(created.id)
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Could not start the analysis. Please try again.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not start the analysis. Please try again.'))
     } finally {
       setSubmitting(false)
     }

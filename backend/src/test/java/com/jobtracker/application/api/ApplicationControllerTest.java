@@ -198,4 +198,75 @@ class ApplicationControllerTest extends AbstractIntegrationTest {
                 .header("Authorization", authHeader))
             .andExpect(status().isNotFound());
     }
+
+    @Test
+    void updateRejectsBlankCompanyAndOversizedText() throws Exception {
+        Long appId = createApp("Acme", "Dev");
+
+        mockMvc.perform(patch("/applications/" + appId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content("{\"company\":\"   \"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors", hasItem("company: Company name must not be blank")));
+
+        UpdateApplicationRequest update = new UpdateApplicationRequest();
+        update.setNotes("x".repeat(CreateApplicationRequest.MAX_NOTES_CHARS + 1));
+        mockMvc.perform(patch("/applications/" + appId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content(objectMapper.writeValueAsString(update)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors", hasItem(startsWith("notes:"))));
+    }
+
+    @Test
+    void createRejectsOversizedJobDescription() throws Exception {
+        CreateApplicationRequest create = new CreateApplicationRequest();
+        create.setCompany("Acme");
+        create.setRole("Dev");
+        create.setJobDescription("x".repeat(CreateApplicationRequest.MAX_JOB_DESCRIPTION_CHARS + 1));
+
+        mockMvc.perform(post("/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content(objectMapper.writeValueAsString(create)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors", hasItem(startsWith("jobDescription:"))));
+    }
+
+    @Test
+    void updateWithEmptyNotesClearsThem() throws Exception {
+        CreateApplicationRequest create = new CreateApplicationRequest();
+        create.setCompany("Acme");
+        create.setRole("Dev");
+        create.setNotes("Call back on Monday");
+        String json = mockMvc.perform(post("/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content(objectMapper.writeValueAsString(create)))
+            .andReturn().getResponse().getContentAsString();
+        Long appId = objectMapper.readTree(json).get("id").asLong();
+
+        mockMvc.perform(patch("/applications/" + appId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content("{\"notes\":\"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.notes").value(""))
+            .andExpect(jsonPath("$.company").value("Acme"));
+    }
+
+    private Long createApp(String company, String role) throws Exception {
+        CreateApplicationRequest create = new CreateApplicationRequest();
+        create.setCompany(company);
+        create.setRole(role);
+        String json = mockMvc.perform(post("/applications")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", authHeader)
+                .content(objectMapper.writeValueAsString(create)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(json).get("id").asLong();
+    }
 }

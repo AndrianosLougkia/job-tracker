@@ -12,11 +12,17 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.Set;
 
 @Service
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+
+    /** Secrets published in this repository; anyone could forge tokens signed with them. */
+    static final Set<String> PUBLIC_SECRETS = Set.of(
+        "dev-secret-key-minimum-32-chars-long!!",            // application.yml fallback
+        "replace_with_a_real_secret_minimum_32_chars!!");    // .env.example placeholder
 
     private final SecretKey signingKey;
     private final long expirationMs;
@@ -25,6 +31,9 @@ public class JwtService {
                       @Value("${app.jwt.expiration-ms}") long expirationMs) {
         if (secret.length() < 32)
             throw new IllegalArgumentException("JWT secret must be at least 32 characters.");
+        if (PUBLIC_SECRETS.contains(secret))
+            log.warn("JWT_SECRET is a publicly known placeholder: fine for local development, "
+                + "but anyone can forge logins. Set it with: openssl rand -hex 32");
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMs = expirationMs;
     }

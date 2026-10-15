@@ -5,6 +5,7 @@ import { AppShell } from '../components/common/AppShell'
 import { StatusSelect, ALL_STATUSES, statusLabel } from '../components/common/StatusBadge'
 import { Card, PageHeader, Button, Input, Textarea, Select, Alert, Spinner, EmptyState } from '../components/common'
 import type { Application, ApplicationStatus } from '../types'
+import { apiErrorMessage } from '../api/errors'
 
 export default function ApplicationsPage() {
   const [apps, setApps]         = useState<Application[]>([])
@@ -17,7 +18,7 @@ export default function ApplicationsPage() {
     setLoading(true)
     listApplications()
       .then(setApps)
-      .catch(() => setError('Failed to load applications.'))
+      .catch(err => setError(apiErrorMessage(err, 'Failed to load applications.')))
       .finally(() => setLoading(false))
   }
 
@@ -32,9 +33,9 @@ export default function ApplicationsPage() {
     try {
       const updated = await updateApplication(app.id, { status })
       setApps(prev => prev.map(a => a.id === app.id ? updated : a))
-    } catch {
+    } catch (err) {
       setApps(prev => prev.map(a => a.id === app.id ? app : a))
-      setError(`Failed to update status for ${app.company}.`)
+      setError(apiErrorMessage(err, `Failed to update status for ${app.company}.`))
     } finally {
       setSavingId(null)
     }
@@ -45,8 +46,8 @@ export default function ApplicationsPage() {
     try {
       await deleteApplication(id)
       setApps(prev => prev.filter(a => a.id !== id))
-    } catch {
-      setError('Failed to delete application.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to delete application.'))
     }
   }
 
@@ -152,8 +153,8 @@ function CreateApplicationForm({
         appliedAt: appliedAt || undefined,
       })
       onCreated(app)
-    } catch (err: any) {
-      setApiError(err.response?.data?.message ?? 'Failed to create application.')
+    } catch (err) {
+      setApiError(apiErrorMessage(err, 'Failed to create application.'))
     } finally {
       setLoading(false)
     }

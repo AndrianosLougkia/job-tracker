@@ -10,9 +10,10 @@ spring:
     hibernate:
       ddl-auto: validate
     show-sql: false
+    # Services map entities to DTOs inside their transactions; no lazy loading after them
+    open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
   flyway:
     enabled: true
@@ -51,7 +52,10 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
+      # Component statuses (db, minio, ...) are public; their details (versions,
+      # disk paths, error messages) are not, since the endpoint needs no login.
+      show-components: always
+      show-details: never
   health:
     # Redis is an optional cache: the app is fully functional without it, so its
     # absence must not mark the whole application DOWN.
@@ -67,14 +71,22 @@ springdoc:
 
 app:
   jwt:
+    # The fallback is for local development only; a startup warning flags it. Set JWT_SECRET anywhere else.
     secret: ${JWT_SECRET:dev-secret-key-minimum-32-chars-long!!}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  auth:
+    login:
+      # Failed logins allowed per email before further attempts get 429 for the lockout period
+      max-failures: ${LOGIN_MAX_FAILURES:5}
+      lockout: ${LOGIN_LOCKOUT:15m}
   cache:
     # Namespaces this app's keys in a Redis shared with other projects
     key-prefix: ${CACHE_KEY_PREFIX:jobtracker:}
     # Maximum age of cached dashboard statistics
     dashboard-ttl: ${DASHBOARD_CACHE_TTL:5m}
   analysis:
+    # Analyses one user may start in a rolling 24 hours (0 = unlimited); caps paid AI usage
+    daily-limit: ${ANALYSIS_DAILY_LIMIT:20}
     # Background analysis pool: max-size caps concurrent AI calls; queue-capacity caps waiting work
     executor:
       core-size: ${ANALYSIS_EXECUTOR_CORE_SIZE:4}
@@ -115,6 +127,7 @@ app:
 
 logging:
   level:
-    com.jobtracker: DEBUG
+    # DEBUG logs every authenticated request with the user's email; use it locally only
+    com.jobtracker: ${LOG_LEVEL:INFO}
     org.flywaydb: INFO
     org.springframework.security: WARN

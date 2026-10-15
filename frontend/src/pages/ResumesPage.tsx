@@ -3,6 +3,7 @@ import { AppShell } from '../components/common/AppShell'
 import { Card, PageHeader, Button, Alert, Spinner, EmptyState } from '../components/common'
 import { listResumes, uploadResume, deleteResume } from '../api/resumes'
 import type { ResumeResponse } from '../api/resumes'
+import { apiErrorMessage } from '../api/errors'
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -22,7 +23,7 @@ export default function ResumesPage() {
     setLoading(true)
     listResumes()
       .then(setResumes)
-      .catch(() => setError('Failed to load resumes.'))
+      .catch(err => setError(apiErrorMessage(err, 'Failed to load resumes.')))
       .finally(() => setLoading(false))
   }
 
@@ -50,8 +51,8 @@ export default function ResumesPage() {
       setSuccess(`"${resume.originalFilename}" uploaded successfully.${
         resume.textExtracted ? '' : ' (Text extraction failed — the file is still stored.)'
       }`)
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Upload failed.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Upload failed.'))
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -63,8 +64,8 @@ export default function ResumesPage() {
     try {
       await deleteResume(id)
       setResumes(prev => prev.filter(r => r.id !== id))
-    } catch {
-      setError('Failed to delete resume.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to delete resume.'))
     }
   }
 

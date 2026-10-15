@@ -8,13 +8,18 @@ import com.jobtracker.resume.infrastructure.StorageException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,6 +54,14 @@ public class GlobalExceptionHandler {
             .body(errorBody(401, "Unauthorized", ex.getMessage(), request.getRequestURI()));
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequest(
+            BadRequestException ex, HttpServletRequest request) {
+        log.warn("Bad request on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.badRequest()
+            .body(errorBody(400, "Bad Request", ex.getMessage(), request.getRequestURI()));
+    }
+
     @ExceptionHandler(InvalidFileException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidFile(
             InvalidFileException ex, HttpServletRequest request) {
@@ -63,6 +76,24 @@ public class GlobalExceptionHandler {
         log.warn("File too large: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
             .body(errorBody(413, "Payload Too Large", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleUploadTooLarge(
+            MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Upload rejected by multipart size limit on {}", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+            .body(errorBody(413, "Payload Too Large", "File exceeds the 10 MB limit", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, Object>> handleTooManyRequests(
+            TooManyRequestsException ex, HttpServletRequest request) {
+        log.warn("Limit reached on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        long retryAfterSeconds = Math.max(1, ex.getRetryAfter().toSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds))
+            .body(errorBody(429, "Too Many Requests", ex.getMessage(), request.getRequestURI()));
     }
 
     @ExceptionHandler(StorageException.class)
@@ -114,10 +145,34 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleUnexpected(
             Exception ex, HttpServletRequest request) {
+        if (ex instanceof ErrorResponse errorResponse) {
+            return handleFrameworkError(errorResponse, request);
+        }
         log.error("Unhandled exception on {} {}", request.getMethod(), request.getRequestURI(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(errorBody(500, "Internal Server Error", "An unexpected error occurred",
                 request.getRequestURI()));
+    }
+
+    /**
+     * Spring MVC's own client errors (unknown route, unsupported method or media type,
+     * missing parameter, ...) carry their status; keep it instead of reporting a 500.
+     */
+    private ResponseEntity<Map<String, Object>> handleFrameworkError(
+            ErrorResponse ex, HttpServletRequest request) {
+        HttpStatusCode status = ex.getStatusCode();
+        HttpStatus resolved = HttpStatus.resolve(status.value());
+        String reason = resolved != null ? resolved.getReasonPhrase() : "Error";
+        String detail = ex instanceof NoResourceFoundException
+            ? "No endpoint " + request.getMethod() + " " + request.getRequestURI()
+            : ex.getBody().getDetail() != null ? ex.getBody().getDetail() : reason;
+        if (status.is5xxServerError()) {
+            log.error("Framework error on {} {}: {}", request.getMethod(), request.getRequestURI(), detail);
+        } else {
+            log.warn("Rejected {} {}: {}", request.getMethod(), request.getRequestURI(), detail);
+        }
+        return ResponseEntity.status(status).headers(ex.getHeaders())
+            .body(errorBody(status.value(), reason, detail, request.getRequestURI()));
     }
 
     // public — as per your debugged version

@@ -13,11 +13,13 @@ client.interceptors.request.use(config => {
   return config
 })
 
-// On 401, clear stored credentials and redirect to login
+// On 401, clear stored credentials and redirect to login. Login and registration are
+// excluded: there a 401 means wrong credentials, which the form itself must show.
 client.interceptors.response.use(
   res => res,
   err => {
-    if (err.response?.status === 401) {
+    const isAuthCall = err.config?.url?.startsWith('/auth/')
+    if (err.response?.status === 401 && !isAuthCall) {
       clearAuth()
       window.location.href = '/login'
     }

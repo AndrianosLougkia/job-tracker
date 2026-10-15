@@ -5,6 +5,7 @@ import { AppShell } from '../components/common/AppShell'
 import { StatusSelect, ALL_STATUSES, statusLabel } from '../components/common/StatusBadge'
 import { AnalysisPanel } from '../components/analysis/AnalysisPanel'
 import { Card, PageHeader, Button, Input, Textarea, Select, Alert, Spinner } from '../components/common'
+import { apiErrorMessage } from '../api/errors'
 import type { Application, ApplicationStatus } from '../types'
 
 export default function ApplicationDetailPage() {
@@ -20,7 +21,7 @@ export default function ApplicationDetailPage() {
   useEffect(() => {
     getApplication(Number(id))
       .then(setApp)
-      .catch(() => setError('Application not found.'))
+      .catch(err => setError(apiErrorMessage(err, 'Application not found.')))
       .finally(() => setLoading(false))
   }, [id])
 
@@ -32,9 +33,9 @@ export default function ApplicationDetailPage() {
     setError(null)
     try {
       setApp(await updateApplication(app.id, { status }))
-    } catch {
+    } catch (err) {
       setApp(previous)
-      setError('Failed to update status.')
+      setError(apiErrorMessage(err, 'Failed to update status.'))
     } finally {
       setSavingStatus(false)
     }
@@ -45,8 +46,8 @@ export default function ApplicationDetailPage() {
     try {
       await deleteApplication(Number(id))
       navigate('/applications')
-    } catch {
-      setError('Failed to delete.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to delete.'))
     }
   }
 
@@ -142,13 +143,14 @@ function EditForm({ app, onSaved }: { app: Application; onSaved: (a: Application
     try {
       const updated = await updateApplication(app.id, {
         company, role, status,
-        jobDescription: jd || undefined,
-        notes: notes || undefined,
+        // Sent even when empty, so clearing a field in the form clears it on the server
+        jobDescription: jd,
+        notes,
         appliedAt: appliedAt || undefined,
       })
       onSaved(updated)
-    } catch {
-      setError('Failed to save changes.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to save changes.'))
     } finally {
       setLoading(false)
     }

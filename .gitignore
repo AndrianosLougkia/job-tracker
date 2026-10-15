@@ -1,5 +1,7 @@
 # ---- Secrets ----
 .env
+# MinIO AIStor license: personal to whoever deploys, never committed
+minio.license
 
 # ---- Java / Maven ----
 backend/target/

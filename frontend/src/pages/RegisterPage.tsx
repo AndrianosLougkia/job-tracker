@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { register } from '../api/auth'
 import { Input, Button, Alert, Card } from '../components/common'
+import { apiErrorMessage } from '../api/errors'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -21,10 +22,8 @@ export default function RegisterPage() {
     try {
       await register({ email, password })
       navigate('/login')
-    } catch (err: any) {
-      const msg = err.response?.data?.message ?? 'Registration failed.'
-      const fieldErrors: string[] = err.response?.data?.errors ?? []
-      setError(fieldErrors.length ? fieldErrors.join(', ') : msg)
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Registration failed.'))
     } finally {
       setLoading(false)
     }

@@ -5,6 +5,7 @@ import { AppShell } from '../components/common/AppShell'
 import { Card, PageHeader, Spinner, Alert } from '../components/common'
 import { StatusBadge } from '../components/common/StatusBadge'
 import type { ApplicationStatus, DashboardStats } from '../types'
+import { apiErrorMessage } from '../api/errors'
 
 const STAT_STATUSES: ApplicationStatus[] = ['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER']
 
@@ -16,7 +17,7 @@ export default function DashboardPage() {
   useEffect(() => {
     getDashboardStats()
       .then(setStats)
-      .catch(() => setError('Failed to load dashboard statistics.'))
+      .catch(err => setError(apiErrorMessage(err, 'Failed to load dashboard statistics.')))
       .finally(() => setLoading(false))
   }, [])
 

@@ -6,6 +6,10 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 
 public class CreateApplicationRequest {
+    /** Matches the default AI input limit, so any stored description can be analysed. */
+    public static final int MAX_JOB_DESCRIPTION_CHARS = 50_000;
+    public static final int MAX_NOTES_CHARS = 10_000;
+
     @NotBlank(message = "Company name is required")
     @Size(max = 255, message = "Company name must not exceed 255 characters")
     private String company;
@@ -15,8 +19,13 @@ public class CreateApplicationRequest {
     private String role;
 
     private ApplicationStatus status;   // optional; defaults to WISHLIST
+
+    @Size(max = MAX_JOB_DESCRIPTION_CHARS, message = "Job description must not exceed 50000 characters")
     private String jobDescription;
+
+    @Size(max = MAX_NOTES_CHARS, message = "Notes must not exceed 10000 characters")
     private String notes;
+
     private LocalDate appliedAt;
 
     public String getCompany()           { return company; }

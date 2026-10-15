@@ -385,8 +385,8 @@ Every row in every business table carries a `user_id` foreign key.
 ### Registration
 
 1. POST `/api/auth/register` with `{email, password}`
-2. Validate email format and password strength
-3. Check email uniqueness (throw `409 Conflict` if taken)
+2. Validate email format and password length (8–72 characters, at most 72 bytes: BCrypt's limit)
+3. Normalise the email to lower case; check uniqueness (throw `409 Conflict` if taken)
 4. Hash password with BCrypt (strength 12)
 5. Persist `User`
 6. Return `201 Created` with user profile (no token — require explicit login)
@@ -394,8 +394,9 @@ Every row in every business table carries a `user_id` foreign key.
 ### Login
 
 1. POST `/api/auth/login` with `{email, password}`
-2. Load user by email; return `401` on not found
-3. Compare password with BCrypt; return `401` on mismatch
+2. Normalise the email; return `429` if it is locked out after repeated failures (`LoginAttemptLimiter`)
+3. Load user by email and compare the password with BCrypt; return the same `401` for either
+   failure and count it towards the lockout
 4. Issue signed JWT (HS256 or RS256) with claims: `sub=userId`, `email`, `iat`, `exp`
 5. Return token in response body (not in a cookie, for simplicity)
 
@@ -623,8 +624,8 @@ is logged; a compensating background task is a future improvement.
 |---|---|---|
 | `postgres` | `postgres:16` | Primary database |
 | `redis` | `redis:8.10.2-alpine` | Dashboard cache (64 MB, LRU, no persistence) |
-| `minio` | `minio/minio` | Object storage |
-| `backend` | Built from `./backend` Dockerfile | Spring Boot application |
+| `minio` | `quay.io/minio/aistor/minio` (needs `minio.license`) | Object storage |
+| `backend` | Built from `./backend` Dockerfile | Spring Boot application (health-checked via `/api/actuator/health`) |
 | `frontend` | Built from `./frontend` Dockerfile | Vite dev server (or nginx in prod mode) |
 | `ollama` | `ollama/ollama` (optional profile) | Local LLM serving |
 
@@ -660,7 +661,8 @@ The `ollama` service is behind a `--profile ollama` flag so it is not started by
 ### Integration tests
 
 - Spring Boot `@SpringBootTest` tests against Testcontainers-managed PostgreSQL and Redis
-- MinIO tested against a Testcontainers MinIO instance
+- MinIO tested against a Testcontainers AIStor instance; runs only when `minio.license` is present,
+  since AIStor needs a license and the community images are no longer published
 - API-layer tests (`@AutoConfigureMockMvc`) for auth, CRUD, and ownership enforcement
 - All AI provider integration tests default to the Mock provider
 - WebSocket tests in Stage 8
@@ -670,7 +672,8 @@ The `ollama` service is behind a `--profile ollama` flag so it is not started by
 - Tests must pass before a stage is considered complete
 - No `@Disabled` tests without a documented reason
 - Testcontainers images are pinned to specific versions for reproducibility
-- The test suite must run without any external service (use Mock AI, Testcontainers for DB/Redis/MinIO)
+- The test suite must run without any external service (use Mock AI, Testcontainers for DB/Redis/MinIO);
+  the MinIO test is skipped, not failed, when no license is available
 - Never test with production credentials
 
 ### Coverage targets (guidance, not hard gates)
@@ -742,15 +745,20 @@ to structured JSON error responses.
 
 | Exception | HTTP status |
 |---|---|
-| `ResourceNotFoundException` | 404 |
-| `AccessDeniedException` | 404 (hides existence) |
-| `ValidationException` | 400 |
-| `MethodArgumentNotValidException` | 400 (field errors included) |
-| `DataIntegrityViolationException` (duplicate email) | 409 |
-| `FileSizeLimitExceededException` | 413 |
-| `UnsupportedFileTypeException` | 400 |
-| `ServiceUnavailableException` (MinIO/Redis down) | 503 |
+| `ResourceNotFoundException` (also for other users' resources) | 404 (hides existence) |
+| `MethodArgumentNotValidException` | 400 (field errors in `errors`) |
+| `BadRequestException`, `InvalidFileException`, unreadable body, bad parameter type | 400 |
+| `InvalidCredentialsException` | 401 |
+| `DuplicateResourceException` (duplicate email) | 409 |
+| `FileTooLargeException`, `MaxUploadSizeExceededException` | 413 |
+| `AnalysisInputException` (nothing to analyse, input too long) | 422 |
+| `TooManyRequestsException` (login lockout, daily analysis limit) | 429 with `Retry-After` |
+| `StorageException` (MinIO down) | 503 |
+| Spring MVC's own errors (unknown route, wrong method, missing part, ...) | Their own status (404, 405, 400, ...) |
 | `Exception` (catch-all) | 500 — log full stack trace; return generic message |
+
+Redis failures never reach the handler: the cache error handler logs them and falls back to
+PostgreSQL.
 
 ### Logging rules
 
@@ -771,9 +779,15 @@ to structured JSON error responses.
 | Resource existence leakage | 404 returned for both "not found" and "not yours" |
 | SQL injection | JPA / parameterized queries only; no raw string concatenation |
 | XSS (API) | JSON responses; `Content-Type: application/json` enforced |
-| File upload | Content-Type and magic-byte validation; size limit; storage key generated server-side |
-| CORS | Restricted to known frontend origin in production config |
-| Actuator | Health endpoint public; all other actuator endpoints require authentication |
+| Email identity | Lower-cased on registration and login; a database CHECK constraint enforces it (V5) |
+| Password guessing | 5 failed logins per email in 15 minutes lock that email for the rest of the window (429) |
+| AI cost abuse | Per-user limit of analyses per rolling 24 hours (`ANALYSIS_DAILY_LIMIT`, 429); bounded executor |
+| Input size | Bean Validation limits on every text field; 10 MB multipart limit |
+| File upload | Content-Type and `%PDF-` signature validation; size limit; storage key generated server-side; display name sanitised |
+| CORS | Not enabled: the frontend reaches the API through the same origin (Vite proxy / nginx); WebSocket origins restricted by `WS_ALLOWED_ORIGINS` |
+| Actuator | Only `health` and `info` exposed and public; health shows component statuses without details |
+| Default secrets | Startup warning when `JWT_SECRET` is a value published in this repository |
+| Network exposure | Compose publishes PostgreSQL, MinIO and Redis on 127.0.0.1 only |
 | Secrets in source | `.env` gitignored; `.env.example` contains only placeholder values |
 | Dependency vulnerabilities | `mvn dependency:analyze` and OWASP dependency-check recommended (future CI step) |
 

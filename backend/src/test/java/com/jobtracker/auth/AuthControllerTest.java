@@ -11,6 +11,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.UUID;
+
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -150,6 +152,86 @@ class AuthControllerTest extends AbstractIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(login)))
             .andExpect(status().isUnauthorized());
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Email case, password limits, brute-force protection                //
+    // ------------------------------------------------------------------ //
+
+    @Test
+    void emailsAreCaseInsensitiveAndStoredLowerCase() throws Exception {
+        register("Erin@Example.COM", "password123").andExpect(status().isCreated())
+            .andExpect(jsonPath("$.email").value("erin@example.com"));
+
+        register("erin@example.com", "password123").andExpect(status().isConflict());
+        login("ERIN@example.com", "password123").andExpect(status().isOk())
+            .andExpect(jsonPath("$.email").value("erin@example.com"));
+    }
+
+    @Test
+    void passwordOverBcryptLimitIsRejectedWith400() throws Exception {
+        register("long@example.com", "a".repeat(73))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.errors", hasItem(containsString("password"))));
+        // 30 characters, but 90 bytes in UTF-8
+        register("multibyte@example.com", "€".repeat(30))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message", containsString("72 bytes")));
+    }
+
+    @Test
+    void overlongPasswordAtLoginIsJustInvalidCredentials() throws Exception {
+        register("frank@example.com", "password123").andExpect(status().isCreated());
+
+        login("frank@example.com", "€".repeat(30)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void repeatedFailedLoginsLockTheAccountTemporarily() throws Exception {
+        String email = "grace-" + UUID.randomUUID() + "@example.com";
+        register(email, "password123").andExpect(status().isCreated());
+
+        for (int i = 0; i < 5; i++) {
+            login(email, "wrong-password").andExpect(status().isUnauthorized());
+        }
+        // Even the right password is refused while locked
+        login(email, "password123")
+            .andExpect(status().isTooManyRequests())
+            .andExpect(header().exists("Retry-After"))
+            .andExpect(jsonPath("$.message", containsString("Too many failed login attempts")));
+        // Other accounts are unaffected
+        String other = "heidi-" + UUID.randomUUID() + "@example.com";
+        register(other, "password123").andExpect(status().isCreated());
+        login(other, "password123").andExpect(status().isOk());
+    }
+
+    @Test
+    void successfulLoginResetsTheFailureCount() throws Exception {
+        String email = "ivan-" + UUID.randomUUID() + "@example.com";
+        register(email, "password123").andExpect(status().isCreated());
+
+        for (int i = 0; i < 4; i++) login(email, "wrong-password").andExpect(status().isUnauthorized());
+        login(email, "password123").andExpect(status().isOk());
+        for (int i = 0; i < 4; i++) login(email, "wrong-password").andExpect(status().isUnauthorized());
+        login(email, "password123").andExpect(status().isOk());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions register(String email, String password) throws Exception {
+        AuthDtos.RegisterRequest req = new AuthDtos.RegisterRequest();
+        req.setEmail(email);
+        req.setPassword(password);
+        return mockMvc.perform(post("/auth/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(req)));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions login(String email, String password) throws Exception {
+        AuthDtos.LoginRequest req = new AuthDtos.LoginRequest();
+        req.setEmail(email);
+        req.setPassword(password);
+        return mockMvc.perform(post("/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(req)));
     }
 
     // ------------------------------------------------------------------ //

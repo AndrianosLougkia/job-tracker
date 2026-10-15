@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,6 +25,9 @@ public class ResumeService {
     private static final Logger log = LoggerFactory.getLogger(ResumeService.class);
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L; // 10 MB
     private static final String PDF_CONTENT_TYPE = "application/pdf";
+    /** Every PDF starts with this signature; the browser-supplied content type alone proves nothing. */
+    private static final byte[] PDF_MAGIC = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+    private static final int MAX_FILENAME_LENGTH = 255;
 
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
@@ -69,11 +74,14 @@ public class ResumeService {
 
     public ResumeResponse upload(MultipartFile file, Long userId) throws IOException {
         validateFile(file);
+        byte[] bytes = file.getBytes();
+        if (!startsWithPdfSignature(bytes)) {
+            throw new InvalidFileException("File is not a valid PDF");
+        }
 
         User user = userRepository.findById(userId)
             .orElseThrow(() -> ResourceNotFoundException.user(userId));
 
-        byte[] bytes = file.getBytes();
         String storageKey = "resumes/" + userId + "/" + UUID.randomUUID() + ".pdf";
 
         // Store in MinIO first
@@ -87,17 +95,24 @@ public class ResumeService {
             log.warn("Text extraction failed for {}: {}", storageKey, e.getMessage());
         }
 
-        Resume resume = new Resume(user, file.getOriginalFilename(), storageKey,
+        Resume resume = new Resume(user, displayFilename(file.getOriginalFilename()), storageKey,
             file.getSize(), extractedText);
-
-        return ResumeResponse.from(resumeRepository.save(resume));
+        try {
+            // saveAndFlush so a database failure surfaces here, while the object can still be removed
+            return ResumeResponse.from(resumeRepository.saveAndFlush(resume));
+        } catch (RuntimeException e) {
+            storagePort.delete(storageKey);
+            throw e;
+        }
     }
 
     public void deleteResume(Long id, Long userId) {
         Resume resume = findOwnedOrThrow(id, userId);
-        // Delete from storage first; DB row removed after
-        storagePort.delete(resume.getStorageKey());
+        // Row first: if the database refuses, the file must still be there. A failed
+        // storage delete only leaves an orphaned object, which the user never sees.
         resumeRepository.delete(resume);
+        resumeRepository.flush();
+        storagePort.delete(resume.getStorageKey());
     }
 
     // ------------------------------------------------------------------ //
@@ -115,6 +130,23 @@ public class ResumeService {
         if (!PDF_CONTENT_TYPE.equals(contentType)) {
             throw new InvalidFileException("Only PDF files are accepted");
         }
+    }
+
+    private static boolean startsWithPdfSignature(byte[] bytes) {
+        return bytes.length >= PDF_MAGIC.length
+            && Arrays.equals(bytes, 0, PDF_MAGIC.length, PDF_MAGIC, 0, PDF_MAGIC.length);
+    }
+
+    /**
+     * Name shown to the user: browsers may send a full client path, and the column holds
+     * at most 255 characters. The name is never used to build a storage path.
+     */
+    public static String displayFilename(String original) {
+        if (original == null || original.isBlank()) return "resume.pdf";
+        String name = original.substring(Math.max(original.lastIndexOf('/'), original.lastIndexOf('\\')) + 1)
+            .replaceAll("\\p{Cntrl}", "").strip();
+        if (name.isEmpty()) return "resume.pdf";
+        return name.length() <= MAX_FILENAME_LENGTH ? name : name.substring(0, MAX_FILENAME_LENGTH);
     }
 
     private Resume findOwnedOrThrow(Long id, Long userId) {

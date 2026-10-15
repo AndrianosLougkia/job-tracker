@@ -9,6 +9,7 @@ import com.jobtracker.analysis.domain.*;
 import com.jobtracker.analysis.infrastructure.AsyncAnalysisProcessor;
 import com.jobtracker.application.domain.ApplicationService;
 import com.jobtracker.infrastructure.exception.ResourceNotFoundException;
+import com.jobtracker.infrastructure.exception.TooManyRequestsException;
 import com.jobtracker.resume.domain.ResumeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.TaskRejectedException;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -39,6 +41,7 @@ class AnalysisServiceTest {
     @Mock ApplicationService applicationService;
     @Mock ResumeService resumeService;
     @Mock AsyncAnalysisProcessor processor;
+    @Mock AnalysisQuota quota;
 
     private AiProvider provider;
     private AnalysisService service;
@@ -52,7 +55,7 @@ class AnalysisServiceTest {
 
     private AnalysisService newService(AiProvider aiProvider, int maxChars) {
         return new AnalysisService(analysisRepository, applicationService, resumeService,
-            new AiProviderFactory(List.of(aiProvider), aiProvider.name()), processor, maxChars);
+            new AiProviderFactory(List.of(aiProvider), aiProvider.name()), processor, quota, maxChars);
     }
 
     private void givenInputs(String job, String resumeText) {
@@ -137,6 +140,17 @@ class AnalysisServiceTest {
             .isInstanceOf(AnalysisInputException.class)
             .hasMessageContaining("exceeds the maximum of 20 characters");
         verifyNoInteractions(analysisRepository);
+    }
+
+    @Test
+    void userOverTheDailyLimitIsRejectedBeforeAnythingIsStored() {
+        givenInputs(JOB, RESUME_TEXT);
+        doThrow(new TooManyRequestsException("Daily limit of 20 analyses reached", Duration.ofHours(3)))
+            .when(quota).checkAllowed(USER);
+
+        assertThatThrownBy(() -> service.requestAnalysis(APP, RESUME, USER))
+            .isInstanceOf(TooManyRequestsException.class);
+        verifyNoInteractions(analysisRepository, processor);
     }
 
     @Test

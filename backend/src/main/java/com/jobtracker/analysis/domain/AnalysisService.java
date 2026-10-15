@@ -31,6 +31,7 @@ public class AnalysisService {
     private final ResumeService resumeService;
     private final AiProviderFactory providerFactory;
     private final AsyncAnalysisProcessor processor;
+    private final AnalysisQuota quota;
     private final int maxInputChars;
 
     public AnalysisService(AnalysisRepository analysisRepository,
@@ -38,12 +39,14 @@ public class AnalysisService {
                            ResumeService resumeService,
                            AiProviderFactory providerFactory,
                            AsyncAnalysisProcessor processor,
+                           AnalysisQuota quota,
                            @Value("${app.ai.max-input-chars:50000}") int maxInputChars) {
         this.analysisRepository = analysisRepository;
         this.applicationService = applicationService;
         this.resumeService = resumeService;
         this.providerFactory = providerFactory;
         this.processor = processor;
+        this.quota = quota;
         this.maxInputChars = maxInputChars;
     }
 
@@ -72,8 +75,8 @@ public class AnalysisService {
 
     /**
      * Start analysing a resume against an application's job description.
-     * Both must belong to the user (404 otherwise) and contain usable text (422 otherwise);
-     * those checks run in the request. The AI call runs in the background, so this returns
+     * Both must belong to the user (404 otherwise) and contain usable text (422 otherwise),
+     * and the user must be within the daily limit (429 otherwise); those checks run in the request. The AI call runs in the background, so this returns
      * the analysis as PENDING and the owner is notified over WebSocket when it finishes.
      *
      * Not transactional on purpose: the PENDING row must be committed before the
@@ -88,6 +91,7 @@ public class AnalysisService {
             "Job description");
         requireUsableText(resumeText, "Resume " + resumeId + " has no extracted text to analyse",
             "Resume text");
+        quota.checkAllowed(userId);
 
         String providerName = providerFactory.getProvider().name();
         Analysis analysis = analysisRepository.save(new Analysis(userId, applicationId, resumeId, providerName));

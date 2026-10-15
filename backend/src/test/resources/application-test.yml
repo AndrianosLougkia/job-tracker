@@ -11,6 +11,17 @@ logging:
     org.flywaydb: DEBUG
     org.testcontainers: INFO
 
+management:
+  health:
+    minio:
+      enabled: false   # no MinIO in most tests; MinioStorageIntegrationTest turns it back on
+
 app:
+  minio:
+    # Nothing listens here: tests never touch a MinIO from a running dev stack, and
+    # uploads fail fast with 503. MinioStorageIntegrationTest points at a real one.
+    endpoint: http://localhost:1
   ai:
     provider: mock   # tests never call an external AI service
+  analysis:
+    daily-limit: 0   # unlimited; AnalysisQuotaIntegrationTest sets its own limit

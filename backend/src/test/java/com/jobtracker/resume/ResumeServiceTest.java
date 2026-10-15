@@ -62,39 +62,84 @@ class ResumeServiceTest {
     @Test
     void uploadStoresFileAndPersistsResume() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
-            "file", "resume.pdf", "application/pdf", "pdf content".getBytes());
+            "file", "resume.pdf", "application/pdf", "%PDF-1.4 content".getBytes());
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(pdfTextExtractor.extract(any())).thenReturn("Extracted text");
 
         Resume saved = new Resume(user, "resume.pdf", "resumes/1/uuid.pdf", 11L, "Extracted text");
         setId(saved, 10L);
-        when(resumeRepository.save(any())).thenReturn(saved);
+        when(resumeRepository.saveAndFlush(any())).thenReturn(saved);
 
         var response = service.upload(file, 1L);
 
         assertThat(response.getOriginalFilename()).isEqualTo("resume.pdf");
         assertThat(response.isTextExtracted()).isTrue();
         verify(storagePort).store(anyString(), any(), eq("application/pdf"));
-        verify(resumeRepository).save(any());
+        verify(resumeRepository).saveAndFlush(any());
     }
 
     @Test
     void uploadSucceedsEvenWhenExtractionFails() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
-            "file", "resume.pdf", "application/pdf", "pdf content".getBytes());
+            "file", "resume.pdf", "application/pdf", "%PDF-1.4 content".getBytes());
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(pdfTextExtractor.extract(any())).thenReturn(null);
 
         Resume saved = new Resume(user, "resume.pdf", "resumes/1/uuid.pdf", 11L, null);
         setId(saved, 10L);
-        when(resumeRepository.save(any())).thenReturn(saved);
+        when(resumeRepository.saveAndFlush(any())).thenReturn(saved);
 
         var response = service.upload(file, 1L);
 
         assertThat(response.isTextExtracted()).isFalse();
         verify(storagePort).store(anyString(), any(), any());
+    }
+
+    @Test
+    void uploadRejectsNonPdfBytesEvenWithPdfContentType() {
+        MockMultipartFile file = new MockMultipartFile(
+            "file", "cv.pdf", "application/pdf", "<html>not a pdf</html>".getBytes());
+
+        assertThatThrownBy(() -> service.upload(file, 1L))
+            .isInstanceOf(InvalidFileException.class)
+            .hasMessageContaining("not a valid PDF");
+        verifyNoInteractions(storagePort);
+    }
+
+    @Test
+    void uploadRemovesStoredObjectWhenDatabaseSaveFails() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file", "resume.pdf", "application/pdf", "%PDF-1.4 content".getBytes());
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(resumeRepository.saveAndFlush(any())).thenThrow(new IllegalStateException("db down"));
+
+        assertThatThrownBy(() -> service.upload(file, 1L)).hasMessage("db down");
+
+        var key = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(storagePort).store(key.capture(), any(), any());
+        verify(storagePort).delete(key.getValue());
+    }
+
+    @Test
+    void uploadKeepsOnlyTheFileNameOfAClientPath() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+            "file", "C:\\Users\\me\\Documents\\my cv.pdf", "application/pdf", "%PDF-1.4".getBytes());
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(resumeRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var response = service.upload(file, 1L);
+
+        assertThat(response.getOriginalFilename()).isEqualTo("my cv.pdf");
+    }
+
+    @Test
+    void displayFilenameIsTruncatedAndNeverEmpty() {
+        assertThat(ResumeService.displayFilename("a".repeat(300) + ".pdf")).hasSize(255);
+        assertThat(ResumeService.displayFilename(null)).isEqualTo("resume.pdf");
+        assertThat(ResumeService.displayFilename("folder/")).isEqualTo("resume.pdf");
+        assertThat(ResumeService.displayFilename("cv\u0000\n.pdf")).isEqualTo("cv.pdf");
     }
 
     @Test
@@ -105,8 +150,11 @@ class ResumeServiceTest {
 
         service.deleteResume(5L, 1L);
 
-        verify(storagePort).delete("resumes/1/abc.pdf");
-        verify(resumeRepository).delete(resume);
+        // The row goes first, so a database failure never leaves a row without its file
+        var order = inOrder(resumeRepository, storagePort);
+        order.verify(resumeRepository).delete(resume);
+        order.verify(resumeRepository).flush();
+        order.verify(storagePort).delete("resumes/1/abc.pdf");
     }
 
     @Test

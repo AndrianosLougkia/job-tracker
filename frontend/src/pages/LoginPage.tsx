@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../api/auth'
 import { saveAuth, useAuth } from '../store/authStore'
 import { Input, Button, Alert, Card } from '../components/common'
+import { apiErrorMessage } from '../api/errors'
 
 export default function LoginPage() {
   const { login: setUser } = useAuth()
@@ -22,8 +23,8 @@ export default function LoginPage() {
       saveAuth(user)
       setUser(user)
       navigate('/dashboard')
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Login failed. Please try again.')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Login failed. Please try again.'))
     } finally {
       setLoading(false)
     }
